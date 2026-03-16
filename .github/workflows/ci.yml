@@ -79,52 +79,52 @@ jobs:
         run: pnpm --dir src/apps/gateway run --if-present test
 
   text_analysis:
-  name: Python | lint + test
-  runs-on: ubuntu-latest
+    name: Python | lint + test
+    runs-on: ubuntu-latest
 
-  steps:
-    - name: Checkout
-      uses: actions/checkout@v4
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Detect Python service files
-      id: detect
-      run: |
-        if [ -f src/services/text-analysis/pyproject.toml ] || [ -f src/services/text-analysis/requirements.txt ]; then
-          echo "exists=true" >> "$GITHUB_OUTPUT"
-        else
-          echo "exists=false" >> "$GITHUB_OUTPUT"
-        fi
-
-    - name: Setup Python
-      if: steps.detect.outputs.exists == 'true'
-      uses: actions/setup-python@v5
-      with:
-        python-version: "3.11"
-
-    - name: Install dependencies
-      if: steps.detect.outputs.exists == 'true'
-      working-directory: src/services/text-analysis
-      run: |
-        python -m pip install --upgrade pip
-        if [ -f pyproject.toml ]; then
-          pip install -e ".[dev]"
-        else
-          pip install -r requirements.txt
-          if [ -f requirements-dev.txt ]; then
-            pip install -r requirements-dev.txt
+      - name: Detect Python service files
+        id: detect
+        run: |
+          if [ -f src/services/text-analysis/pyproject.toml ] || [ -f src/services/text-analysis/requirements.txt ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
-        fi
 
-    - name: Ruff
-      if: steps.detect.outputs.exists == 'true'
-      working-directory: src/services/text-analysis
-      run: ruff check .
+      - name: Setup Python
+        if: steps.detect.outputs.exists == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
-    - name: Pytest
-      if: steps.detect.outputs.exists == 'true'
-      working-directory: src/services/text-analysis
-      run: pytest -q
+      - name: Install dependencies
+        if: steps.detect.outputs.exists == 'true'
+        working-directory: src/services/text-analysis
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f pyproject.toml ]; then
+            pip install -e ".[dev]"
+          else
+            pip install -r requirements.txt
+            if [ -f requirements-dev.txt ]; then
+              pip install -r requirements-dev.txt
+            fi
+          fi
 
-    - name: Skip Python job
-      if: steps.detect.outputs.exists != 'true'
-      run: echo "Python service not initialized yet, skipping."
+      - name: Ruff
+        if: steps.detect.outputs.exists == 'true'
+        working-directory: src/services/text-analysis
+        run: ruff check .
+
+      - name: Pytest
+        if: steps.detect.outputs.exists == 'true'
+        working-directory: src/services/text-analysis
+        run: pytest -q
+
+      - name: Skip Python job
+        if: steps.detect.outputs.exists != 'true'
+        run: echo "Python service not initialized yet, skipping."
