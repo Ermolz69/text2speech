@@ -1,0 +1,28 @@
+[project]
+name = "tts_adapter"
+version = "0.1.0"
+description = "Piper + ffmpeg adapter service for emotional TTS"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi",
+  "uvicorn[standard]",
+  "pydantic"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+  "black",
+  "isort",
+  "ruff"
+]
+
+[tool.black]
+line-length = 100
+
+[tool.isort]
+profile = "black"
+
+[tool.ruff]
+line-length = 100
+

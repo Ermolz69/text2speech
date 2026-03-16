@@ -1,0 +1,53 @@
+version: "3.9"
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: ./docker/Dockerfile.web
+    ports:
+      - "${PORT_WEB:-5173}:5173"
+    environment:
+      - PORT_WEB=${PORT_WEB:-5173}
+    depends_on:
+      - gateway
+
+  gateway:
+    build:
+      context: .
+      dockerfile: ./docker/Dockerfile.gateway
+    ports:
+      - "${PORT_GATEWAY:-4000}:4000"
+    environment:
+      - PORT_GATEWAY=${PORT_GATEWAY:-4000}
+      - TEXT_ANALYSIS_URL=http://text-analysis:8001
+      - TTS_ADAPTER_URL=http://tts-adapter:8002
+    depends_on:
+      - text-analysis
+      - tts-adapter
+
+  text-analysis:
+    build:
+      context: .
+      dockerfile: ./docker/Dockerfile.text-analysis
+    environment:
+      - PORT_TEXT_ANALYSIS=${PORT_TEXT_ANALYSIS:-8001}
+    ports:
+      - "${PORT_TEXT_ANALYSIS:-8001}:8001"
+
+  tts-adapter:
+    build:
+      context: .
+      dockerfile: ./docker/Dockerfile.tts-adapter
+    environment:
+      - PORT_TTS_ADAPTER=${PORT_TTS_ADAPTER:-8002}
+      - PIPER_BIN=${PIPER_BIN:-/usr/local/bin/piper}
+      - PIPER_MODEL_PATH=${PIPER_MODEL_PATH:-/models/piper/model.onnx}
+      - FFMPEG_BIN=${FFMPEG_BIN:-/usr/bin/ffmpeg}
+    ports:
+      - "${PORT_TTS_ADAPTER:-8002}:8002"
+
+networks:
+  default:
+    name: emotion-tts-network
+

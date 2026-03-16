@@ -1,0 +1,34 @@
+{
+  "info": {
+    "name": "Emotion TTS MVP",
+    "_postman_id": "00000000-0000-0000-0000-000000000000",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Gateway health",
+      "request": {
+        "method": "GET",
+        "url": "{{gateway_url}}/health"
+      }
+    },
+    {
+      "name": "TTS request",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"text\": \"I am so happy to see you 😊😊!\"}"
+        },
+        "url": "{{gateway_url}}/api/tts"
+      }
+    }
+  ]
+}
+

@@ -1,0 +1,14 @@
+FROM node:20-alpine AS build
+WORKDIR /app
+COPY package.json pnpm-workspace.yaml ./
+COPY src/apps/web/package.json src/apps/web/
+RUN corepack enable && pnpm install --filter web...
+COPY . .
+RUN pnpm --filter web build
+
+FROM node:20-alpine
+WORKDIR /app
+COPY --from=build /app/src/apps/web/dist ./dist
+RUN npm install -g serve
+CMD ["serve", "-s", "dist", "-l", "5173"]
+

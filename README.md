@@ -28,12 +28,11 @@ text
 ```
 
 ## Core stack
-- Python
-- Piper
+- Frontend: React + TypeScript
+- Gateway backend: TypeScript + Fastify
+- Text analysis service: Python (FastAPI)
+- TTS service: Piper (Python adapter + ffmpeg)
 - Docker / Docker Compose
-- FastAPI or Flask
-- ffmpeg
-- librosa
 
 ## Documentation
 - [Roadmap (EN)](./roadmap.md)
@@ -43,14 +42,19 @@ text
 ## Planned structure
 ```text
 project-root/
+  src/
+    apps/
+      web/
+      gateway/
+    services/
+      text-analysis/
+      tts-adapter/
+    shared/
   docs/
-  data/
-  services/
-    parser/
-    tts/
-    evaluation/
+  benchmarks/
+  reports/
   docker/
-  outputs/
+  postman/
   README.md
 ```
 
@@ -77,10 +81,10 @@ docker compose up --build
 ```
 
 Expected services:
-- parser service;
-- Piper TTS service;
-- test endpoint or demo UI;
-- generated files in `outputs/`.
+- web app;
+- gateway backend;
+- text-analysis service;
+- Piper TTS adapter service;
 
 ## Benchmarking
 Planned comparison levels:

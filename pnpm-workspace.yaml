@@ -1,0 +1,5 @@
+packages:
+  - "src/apps/*"
+  - "src/services/*"
+  - "src/shared"
+
