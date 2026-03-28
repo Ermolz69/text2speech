@@ -13,7 +13,7 @@
       "properties": {
         "code": {
           "type": "string",
-          "enum": ["validation_error", "internal_error"]
+          "enum": ["validation_error", "internal_error", "upstream_timeout", "upstream_error"]
         },
         "message": {
           "type": "string",

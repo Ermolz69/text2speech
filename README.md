@@ -98,6 +98,10 @@ Expected services:
 - text-analysis service;
 - Piper TTS adapter service;
 
+## Gateway upstream configuration
+
+Gateway calls the text-analysis service through `TEXT_ANALYSIS_URL`. The current default in `docker-compose.yml` is `http://text-analysis:8001`, and gateway normalizes upstream timeouts and failures into its own shared API error envelope.
+
 ## Common API error response
 
 Gateway and Python services now return the same top-level error JSON envelope for validation and runtime failures. The language-neutral source of truth lives in `src/shared/src/api-error.schema.json`.

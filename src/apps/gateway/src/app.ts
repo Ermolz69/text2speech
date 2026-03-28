@@ -2,12 +2,18 @@ import Fastify, { type FastifyInstance } from "fastify";
 import type {
   AnalyzeRequestDto,
   AnalyzeResponseDto,
-  AnalyzeSegmentDto,
   ApiErrorDetail,
   ApiErrorResponse,
   SynthesizeRequestDto,
   SynthesizeResponseDto,
 } from "shared";
+
+import {
+  createTextAnalysisClient,
+  getTextAnalysisClientConfig,
+  TextAnalysisClientError,
+  type TextAnalysisClient,
+} from "./textAnalysisClient";
 
 const port = Number(process.env.PORT_GATEWAY ?? 4000);
 
@@ -19,6 +25,10 @@ type ValidationErrorShape = {
     missingProperty?: string;
   };
 };
+
+export interface AppDependencies {
+  textAnalysisClient?: TextAnalysisClient;
+}
 
 const analyzeBodySchema = {
   type: "object",
@@ -65,7 +75,7 @@ function mapValidationDetails(errors: ValidationErrorShape[]): ApiErrorDetail[] 
 }
 
 function createApiErrorResponse(input: {
-  code: ApiErrorResponse["error"]["code"];
+  code: ApiErrorResponse["error"]["code"] | "upstream_timeout" | "upstream_error";
   message: string;
   status: number;
   path: string;
@@ -82,8 +92,40 @@ function createApiErrorResponse(input: {
   };
 }
 
-export function createApp(): FastifyInstance {
+function mapTextAnalysisClientError(
+  error: TextAnalysisClientError,
+  path: string
+): {
+  status: number;
+  response: ApiErrorResponse;
+} {
+  if (error.kind === "timeout") {
+    return {
+      status: 504,
+      response: createApiErrorResponse({
+        code: "upstream_timeout",
+        message: "Text analysis service timed out",
+        status: 504,
+        path,
+      }),
+    };
+  }
+
+  return {
+    status: 502,
+    response: createApiErrorResponse({
+      code: "upstream_error",
+      message: "Text analysis service request failed",
+      status: 502,
+      path,
+    }),
+  };
+}
+
+export function createApp(dependencies: AppDependencies = {}): FastifyInstance {
   const app = Fastify({ logger: true });
+  const textAnalysisClient =
+    dependencies.textAnalysisClient ?? createTextAnalysisClient(getTextAnalysisClientConfig());
 
   app.setErrorHandler((error, request, reply) => {
     if (error.validation) {
@@ -120,20 +162,17 @@ export function createApp(): FastifyInstance {
         body: analyzeBodySchema,
       },
     },
-    async (request) => {
-      if (request.headers["x-force-error"] === "1") {
-        throw new Error("Forced test runtime error");
+    async (request, reply) => {
+      try {
+        return await textAnalysisClient.analyze(request.body);
+      } catch (error) {
+        if (error instanceof TextAnalysisClientError) {
+          const mapped = mapTextAnalysisClientError(error, getRequestPath(request.url));
+          return reply.status(mapped.status).send(mapped.response);
+        }
+
+        throw error;
       }
-
-      const segment: AnalyzeSegmentDto = {
-        text: request.body.text.trim(),
-        emotion: "joy",
-        intensity: 2,
-        punctuation: ["!"],
-        pauseAfterMs: 120,
-      };
-
-      return { segments: [segment] };
     }
   );
 

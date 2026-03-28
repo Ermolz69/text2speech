@@ -1,4 +1,8 @@
-export type ApiErrorCode = "validation_error" | "internal_error";
+export type ApiErrorCode =
+  | "validation_error"
+  | "internal_error"
+  | "upstream_timeout"
+  | "upstream_error";
 
 export interface ApiErrorDetail {
   location: string;
