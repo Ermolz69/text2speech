@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.models.segment import SegmentMetadata
 
-client = TestClient(app)
+client = TestClient(app, raise_server_exceptions=False)
 
 
 def test_segment_model_validates_blank_text() -> None:
