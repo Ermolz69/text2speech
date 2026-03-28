@@ -100,7 +100,38 @@ Expected services:
 
 ## Gateway upstream configuration
 
-Gateway calls the text-analysis service through `TEXT_ANALYSIS_URL`. The current default in `docker-compose.yml` is `http://text-analysis:8001`, and gateway normalizes upstream timeouts and failures into its own shared API error envelope.
+Gateway calls the text-analysis service through `TEXT_ANALYSIS_URL` and the TTS adapter through `TTS_ADAPTER_URL`. The current defaults in `docker-compose.yml` are `http://text-analysis:8001` and `http://tts-adapter:8002`.
+
+Gateway normalizes upstream timeouts and failures from both services into its shared API error envelope. For `/api/tts`, clients must send prepared segment metadata in `metadata.segments`; gateway validates that shape before forwarding it to `tts-adapter`. `TTS_ADAPTER_TIMEOUT_MS` controls the outbound timeout and defaults to `3000` milliseconds.
+
+Example valid `POST /api/tts` body:
+
+```json
+{
+  "text": "Hello! :) How are you?",
+  "voiceId": "voice-1",
+  "metadata": {
+    "format": "wav",
+    "segments": [
+      {
+        "text": "Hello! :)",
+        "emotion": "joy",
+        "intensity": 3,
+        "emoji": ["positive"],
+        "punctuation": ["exclamation"],
+        "pauseAfterMs": 250
+      },
+      {
+        "text": "How are you?",
+        "emotion": "neutral",
+        "intensity": 1,
+        "punctuation": ["question"],
+        "pauseAfterMs": 150
+      }
+    ]
+  }
+}
+```
 
 ## Common API error response
 

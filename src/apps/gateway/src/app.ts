@@ -4,6 +4,7 @@ import type {
   AnalyzeResponseDto,
   ApiErrorDetail,
   ApiErrorResponse,
+  EmotionLabel,
   SynthesizeRequestDto,
   SynthesizeResponseDto,
 } from "shared";
@@ -14,8 +15,24 @@ import {
   TextAnalysisClientError,
   type TextAnalysisClient,
 } from "./textAnalysisClient";
+import {
+  createTtsAdapterClient,
+  getTtsAdapterClientConfig,
+  TtsAdapterClientError,
+  type TtsAdapterClient,
+} from "./ttsAdapterClient";
 
 const port = Number(process.env.PORT_GATEWAY ?? 4000);
+
+const emotionLabels: EmotionLabel[] = [
+  "neutral",
+  "joy",
+  "playful",
+  "sadness",
+  "anger",
+  "fear",
+  "surprise",
+];
 
 type ValidationErrorShape = {
   instancePath?: string;
@@ -26,8 +43,13 @@ type ValidationErrorShape = {
   };
 };
 
+type UpstreamClientErrorLike = {
+  kind: "timeout" | "upstream";
+};
+
 export interface AppDependencies {
   textAnalysisClient?: TextAnalysisClient;
+  ttsAdapterClient?: TtsAdapterClient;
 }
 
 const analyzeBodySchema = {
@@ -42,11 +64,43 @@ const analyzeBodySchema = {
 const synthesizeBodySchema = {
   type: "object",
   additionalProperties: false,
-  required: ["text", "voiceId"],
+  required: ["text", "voiceId", "metadata"],
   properties: {
     text: { type: "string", minLength: 1 },
     voiceId: { type: "string", minLength: 1 },
-    metadata: { type: "object", nullable: true, additionalProperties: true },
+    metadata: {
+      type: "object",
+      additionalProperties: false,
+      required: ["segments"],
+      properties: {
+        segments: {
+          type: "array",
+          minItems: 1,
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["text", "emotion", "intensity"],
+            properties: {
+              text: { type: "string", minLength: 1 },
+              emotion: { type: "string", enum: emotionLabels },
+              intensity: { type: "integer", enum: [0, 1, 2, 3] },
+              emoji: {
+                type: "array",
+                items: { type: "string", minLength: 1 },
+              },
+              punctuation: {
+                type: "array",
+                items: { type: "string", minLength: 1 },
+              },
+              pauseAfterMs: { type: "integer", minimum: 0 },
+            },
+          },
+        },
+        emotion: { type: "string", enum: emotionLabels },
+        intensity: { type: "integer", enum: [0, 1, 2, 3] },
+        format: { type: "string", enum: ["wav", "mp3", "ogg"] },
+      },
+    },
   },
 } as const;
 
@@ -92,9 +146,10 @@ function createApiErrorResponse(input: {
   };
 }
 
-function mapTextAnalysisClientError(
-  error: TextAnalysisClientError,
-  path: string
+function mapUpstreamClientError(
+  error: UpstreamClientErrorLike,
+  path: string,
+  serviceName: string
 ): {
   status: number;
   response: ApiErrorResponse;
@@ -104,7 +159,7 @@ function mapTextAnalysisClientError(
       status: 504,
       response: createApiErrorResponse({
         code: "upstream_timeout",
-        message: "Text analysis service timed out",
+        message: `${serviceName} timed out`,
         status: 504,
         path,
       }),
@@ -115,17 +170,43 @@ function mapTextAnalysisClientError(
     status: 502,
     response: createApiErrorResponse({
       code: "upstream_error",
-      message: "Text analysis service request failed",
+      message: `${serviceName} request failed`,
       status: 502,
       path,
     }),
   };
 }
 
+function logTtsAdapterClientError(error: TtsAdapterClientError, log: FastifyInstance["log"]): void {
+  if (error.kind === "timeout") {
+    log.warn(
+      {
+        upstream: "tts-adapter",
+        kind: error.kind,
+        reason: error.reason,
+      },
+      error.message
+    );
+    return;
+  }
+
+  log.warn(
+    {
+      upstream: "tts-adapter",
+      kind: error.kind,
+      reason: error.reason,
+      ...(typeof error.statusCode === "number" ? { statusCode: error.statusCode } : {}),
+    },
+    error.message
+  );
+}
+
 export function createApp(dependencies: AppDependencies = {}): FastifyInstance {
   const app = Fastify({ logger: true });
   const textAnalysisClient =
     dependencies.textAnalysisClient ?? createTextAnalysisClient(getTextAnalysisClientConfig());
+  const ttsAdapterClient =
+    dependencies.ttsAdapterClient ?? createTtsAdapterClient(getTtsAdapterClientConfig());
 
   app.setErrorHandler((error, request, reply) => {
     if (error.validation) {
@@ -167,7 +248,11 @@ export function createApp(dependencies: AppDependencies = {}): FastifyInstance {
         return await textAnalysisClient.analyze(request.body);
       } catch (error) {
         if (error instanceof TextAnalysisClientError) {
-          const mapped = mapTextAnalysisClientError(error, getRequestPath(request.url));
+          const mapped = mapUpstreamClientError(
+            error,
+            getRequestPath(request.url),
+            "Text analysis service"
+          );
           return reply.status(mapped.status).send(mapped.response);
         }
 
@@ -183,12 +268,22 @@ export function createApp(dependencies: AppDependencies = {}): FastifyInstance {
         body: synthesizeBodySchema,
       },
     },
-    async (request) => {
-      if (request.headers["x-force-error"] === "1") {
-        throw new Error("Forced test runtime error");
-      }
+    async (request, reply) => {
+      try {
+        return await ttsAdapterClient.synthesize(request.body);
+      } catch (error) {
+        if (error instanceof TtsAdapterClientError) {
+          logTtsAdapterClientError(error, request.log);
+          const mapped = mapUpstreamClientError(
+            error,
+            getRequestPath(request.url),
+            "TTS adapter service"
+          );
+          return reply.status(mapped.status).send(mapped.response);
+        }
 
-      return { audioUrl: "/placeholder.wav", metadata: request.body.metadata };
+        throw error;
+      }
     }
   );
 
