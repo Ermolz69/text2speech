@@ -1,2 +1,10 @@
-// Shared contracts and helpers will live here.
-
+export type {
+  AnalyzeRequestDto,
+  AnalyzeResponseDto,
+  AnalyzeSegmentDto,
+  EmotionIntensity,
+  EmotionLabel,
+  SynthesisMetadataDto,
+  SynthesizeRequestDto,
+  SynthesizeResponseDto,
+} from "./dto";
