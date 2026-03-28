@@ -13,7 +13,8 @@
   },
   "dependencies": {
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "shared": "workspace:*"
   },
   "devDependencies": {
     "@testing-library/react": "^16.0.0",

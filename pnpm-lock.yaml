@@ -43,6 +43,9 @@ importers:
       fastify:
         specifier: ^4.26.2
         version: 4.29.1
+      shared:
+        specifier: workspace:*
+        version: link:../../shared
       zod:
         specifier: ^3.23.0
         version: 3.25.76
@@ -74,6 +77,9 @@ importers:
       react-dom:
         specifier: ^18.2.0
         version: 18.3.1(react@18.3.1)
+      shared:
+        specifier: workspace:*
+        version: link:../../shared
     devDependencies:
       "@testing-library/react":
         specifier: ^16.0.0

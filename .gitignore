@@ -27,3 +27,4 @@ reports/*
 benchmarks/*
 !benchmarks/.gitkeep
 
+AGENTS.md
