@@ -64,38 +64,15 @@ const analyzeBodySchema = {
 const synthesizeBodySchema = {
   type: "object",
   additionalProperties: false,
-  required: ["text", "voiceId", "metadata"],
+  required: ["text", "voiceId"],
   properties: {
     text: { type: "string", minLength: 1 },
     voiceId: { type: "string", minLength: 1 },
     metadata: {
       type: "object",
+      nullable: true,
       additionalProperties: false,
-      required: ["segments"],
       properties: {
-        segments: {
-          type: "array",
-          minItems: 1,
-          items: {
-            type: "object",
-            additionalProperties: false,
-            required: ["text", "emotion", "intensity"],
-            properties: {
-              text: { type: "string", minLength: 1 },
-              emotion: { type: "string", enum: emotionLabels },
-              intensity: { type: "integer", enum: [0, 1, 2, 3] },
-              emoji: {
-                type: "array",
-                items: { type: "string", minLength: 1 },
-              },
-              punctuation: {
-                type: "array",
-                items: { type: "string", minLength: 1 },
-              },
-              pauseAfterMs: { type: "integer", minimum: 0 },
-            },
-          },
-        },
         emotion: { type: "string", enum: emotionLabels },
         intensity: { type: "integer", enum: [0, 1, 2, 3] },
         format: { type: "string", enum: ["wav", "mp3", "ogg"] },
@@ -201,6 +178,37 @@ function logTtsAdapterClientError(error: TtsAdapterClientError, log: FastifyInst
   );
 }
 
+function logTextAnalysisClientError(
+  error: TextAnalysisClientError,
+  log: FastifyInstance["log"]
+): void {
+  log.warn(
+    {
+      upstream: "text-analysis",
+      kind: error.kind,
+    },
+    error.message
+  );
+}
+
+function buildSynthesizePipelineRequest(
+  requestBody: SynthesizeRequestDto,
+  analyzeResponse: AnalyzeResponseDto
+): SynthesizeRequestDto {
+  return {
+    text: requestBody.text,
+    voiceId: requestBody.voiceId,
+    metadata: {
+      ...(requestBody.metadata?.format ? { format: requestBody.metadata.format } : {}),
+      ...(requestBody.metadata?.emotion ? { emotion: requestBody.metadata.emotion } : {}),
+      ...(typeof requestBody.metadata?.intensity === "number"
+        ? { intensity: requestBody.metadata.intensity }
+        : {}),
+      segments: analyzeResponse.segments,
+    },
+  };
+}
+
 export function createApp(dependencies: AppDependencies = {}): FastifyInstance {
   const app = Fastify({ logger: true });
   const textAnalysisClient =
@@ -269,8 +277,27 @@ export function createApp(dependencies: AppDependencies = {}): FastifyInstance {
       },
     },
     async (request, reply) => {
+      let analyzeResponse: AnalyzeResponseDto;
+
       try {
-        return await ttsAdapterClient.synthesize(request.body);
+        analyzeResponse = await textAnalysisClient.analyze({ text: request.body.text });
+      } catch (error) {
+        if (error instanceof TextAnalysisClientError) {
+          logTextAnalysisClientError(error, request.log);
+          const mapped = mapUpstreamClientError(
+            error,
+            getRequestPath(request.url),
+            "Text analysis service"
+          );
+          return reply.status(mapped.status).send(mapped.response);
+        }
+
+        throw error;
+      }
+
+      try {
+        const synthesizeRequest = buildSynthesizePipelineRequest(request.body, analyzeResponse);
+        return await ttsAdapterClient.synthesize(synthesizeRequest);
       } catch (error) {
         if (error instanceof TtsAdapterClientError) {
           logTtsAdapterClientError(error, request.log);
