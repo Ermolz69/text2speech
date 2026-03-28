@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://emotion-tts.local/schemas/api-error.schema.json",
+  "title": "ApiErrorResponse",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["error"],
+  "properties": {
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "status", "path"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": ["validation_error", "internal_error", "upstream_timeout", "upstream_error"]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "integer",
+          "minimum": 400,
+          "maximum": 599
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "details": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["location", "message", "code"],
+            "properties": {
+              "location": {
+                "type": "string",
+                "minLength": 1
+              },
+              "message": {
+                "type": "string",
+                "minLength": 1
+              },
+              "code": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "error": {
+        "code": "validation_error",
+        "message": "Request validation failed",
+        "status": 422,
+        "path": "/api/analyze",
+        "details": [
+          {
+            "location": "body.text",
+            "message": "Field required",
+            "code": "missing"
+          }
+        ]
+      }
+    }
+  ]
+}
