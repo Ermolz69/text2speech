@@ -7,13 +7,14 @@
     "lint": "eslint \"src/**/*.{ts,tsx}\"",
     "typecheck": "tsc --noEmit",
     "build": "vite build",
-    "test": "vitest",
+    "test": "vitest run --passWithNoTests",
     "preview": "vite preview",
     "format": "prettier --write \"src/**/*.{ts,tsx,tsx,js,jsx,json,md}\""
   },
   "dependencies": {
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "shared": "workspace:*"
   },
   "devDependencies": {
     "@testing-library/react": "^16.0.0",

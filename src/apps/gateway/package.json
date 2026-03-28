@@ -7,12 +7,13 @@
     "lint": "eslint \"src/**/*.ts\"",
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.json",
-    "test": "vitest",
+    "test": "vitest run --passWithNoTests",
     "start": "node dist/app.js",
     "format": "prettier --write \"src/**/*.{ts,js,json,md}\""
   },
   "dependencies": {
     "fastify": "^4.26.2",
+    "shared": "workspace:*",
     "zod": "^3.23.0"
   },
   "devDependencies": {
