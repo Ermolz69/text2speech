@@ -7,7 +7,7 @@
     "lint": "eslint \"src/**/*.ts\"",
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.json",
-    "test": "vitest",
+    "test": "vitest run --passWithNoTests",
     "start": "node dist/app.js",
     "format": "prettier --write \"src/**/*.{ts,js,json,md}\""
   },
