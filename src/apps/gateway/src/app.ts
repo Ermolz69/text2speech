@@ -269,6 +269,32 @@ export function createApp(dependencies: AppDependencies = {}): FastifyInstance {
     }
   );
 
+  app.post<{ Body: AnalyzeRequestDto; Reply: AnalyzeResponseDto | ApiErrorResponse }>(
+    "/api/tts/debug",
+    {
+      schema: {
+        body: analyzeBodySchema,
+      },
+    },
+    async (request, reply) => {
+      try {
+        return await textAnalysisClient.analyze(request.body);
+      } catch (error) {
+        if (error instanceof TextAnalysisClientError) {
+          logTextAnalysisClientError(error, request.log);
+          const mapped = mapUpstreamClientError(
+            error,
+            getRequestPath(request.url),
+            "Text analysis service"
+          );
+          return reply.status(mapped.status).send(mapped.response);
+        }
+
+        throw error;
+      }
+    }
+  );
+
   app.post<{ Body: SynthesizeRequestDto; Reply: SynthesizeResponseDto | ApiErrorResponse }>(
     "/api/tts",
     {

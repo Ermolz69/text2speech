@@ -1,4 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type {
+  AnalyzeRequestDto,
+  AnalyzeResponseDto,
+  SynthesizeRequestDto,
+  SynthesizeResponseDto,
+} from "shared";
 
 import { createApp } from "./app";
 import { TextAnalysisClientError, type TextAnalysisClient } from "./textAnalysisClient";
@@ -42,33 +48,7 @@ describe("gateway analyze route", () => {
   });
 
   it("returns upstream analyze data on success", async () => {
-    const textAnalysisClient = createTextAnalysisClientMock({
-      analyze: vi.fn().mockResolvedValue({
-        segments: [
-          {
-            text: "Hello! :)",
-            emotion: "joy",
-            intensity: 2,
-            punctuation: ["exclamation"],
-            pauseAfterMs: 150,
-          },
-        ],
-      }),
-    });
-
-    app = createApp({ textAnalysisClient });
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/api/analyze",
-      payload: {
-        text: "Hello! :)",
-      },
-    });
-
-    expect(response.statusCode).toBe(200);
-    expect(textAnalysisClient.analyze).toHaveBeenCalledWith({ text: "Hello! :)" });
-    expect(response.json()).toEqual({
+    const analyzeResponse: AnalyzeResponseDto = {
       segments: [
         {
           text: "Hello! :)",
@@ -78,7 +58,27 @@ describe("gateway analyze route", () => {
           pauseAfterMs: 150,
         },
       ],
+    };
+
+    const textAnalysisClient = createTextAnalysisClientMock({
+      analyze: vi.fn().mockResolvedValue(analyzeResponse),
     });
+
+    app = createApp({ textAnalysisClient });
+
+    const payload: AnalyzeRequestDto = {
+      text: "Hello! :)",
+    };
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/analyze",
+      payload,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(textAnalysisClient.analyze).toHaveBeenCalledWith(payload);
+    expect(response.json()).toEqual(analyzeResponse);
   });
 
   it("returns the shared validation error envelope", async () => {
@@ -201,6 +201,179 @@ describe("gateway analyze route", () => {
   });
 });
 
+describe("gateway tts debug route", () => {
+  let app = createApp();
+
+  afterEach(async () => {
+    await app.close();
+    app = createApp();
+  });
+
+  it("returns text-analysis metadata without running synthesis", async () => {
+    const analyzeResponse: AnalyzeResponseDto = {
+      segments: [
+        {
+          text: "Hello! :)",
+          emotion: "joy",
+          intensity: 3,
+          emoji: ["positive"],
+          punctuation: ["exclamation"],
+          pauseAfterMs: 250,
+        },
+      ],
+    };
+
+    const textAnalysisClient = createTextAnalysisClientMock({
+      analyze: vi.fn().mockResolvedValue(analyzeResponse),
+    });
+
+    const ttsAdapterClient = createTtsAdapterClientMock();
+    app = createApp({ textAnalysisClient, ttsAdapterClient });
+
+    const payload: AnalyzeRequestDto = {
+      text: "Hello! :)",
+    };
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/tts/debug",
+      payload,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(textAnalysisClient.analyze).toHaveBeenCalledWith(payload);
+    expect(ttsAdapterClient.synthesize).not.toHaveBeenCalled();
+    expect(response.json()).toEqual(analyzeResponse);
+  });
+
+  it("returns a shared validation error when text is missing", async () => {
+    const textAnalysisClient = createTextAnalysisClientMock();
+    const ttsAdapterClient = createTtsAdapterClientMock();
+    app = createApp({ textAnalysisClient, ttsAdapterClient });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/tts/debug",
+      payload: {},
+    });
+
+    expect(response.statusCode).toBe(422);
+    expect(textAnalysisClient.analyze).not.toHaveBeenCalled();
+    expect(ttsAdapterClient.synthesize).not.toHaveBeenCalled();
+    expectTopLevelErrorEnvelope(response.json());
+    expect(response.json()).toEqual({
+      error: {
+        code: "validation_error",
+        message: "Request validation failed",
+        status: 422,
+        path: "/api/tts/debug",
+        details: [
+          {
+            location: "body.text",
+            message: "must have required property 'text'",
+            code: "required",
+          },
+        ],
+      },
+    });
+  });
+
+  it("returns a shared timeout error when text-analysis times out", async () => {
+    const textAnalysisClient = createTextAnalysisClientMock({
+      analyze: vi
+        .fn()
+        .mockRejectedValue(
+          new TextAnalysisClientError("timeout", "Text analysis service request timed out")
+        ),
+    });
+
+    const ttsAdapterClient = createTtsAdapterClientMock();
+    app = createApp({ textAnalysisClient, ttsAdapterClient });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/tts/debug",
+      payload: {
+        text: "Hello",
+      },
+    });
+
+    expect(response.statusCode).toBe(504);
+    expect(ttsAdapterClient.synthesize).not.toHaveBeenCalled();
+    expectTopLevelErrorEnvelope(response.json());
+    expect(response.json()).toEqual({
+      error: {
+        code: "upstream_timeout",
+        message: "Text analysis service timed out",
+        status: 504,
+        path: "/api/tts/debug",
+      },
+    });
+  });
+
+  it("returns a shared upstream error when text-analysis fails", async () => {
+    const textAnalysisClient = createTextAnalysisClientMock({
+      analyze: vi
+        .fn()
+        .mockRejectedValue(
+          new TextAnalysisClientError("upstream", "Text analysis service request failed")
+        ),
+    });
+
+    const ttsAdapterClient = createTtsAdapterClientMock();
+    app = createApp({ textAnalysisClient, ttsAdapterClient });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/tts/debug",
+      payload: {
+        text: "Hello",
+      },
+    });
+
+    expect(response.statusCode).toBe(502);
+    expect(ttsAdapterClient.synthesize).not.toHaveBeenCalled();
+    expectTopLevelErrorEnvelope(response.json());
+    expect(response.json()).toEqual({
+      error: {
+        code: "upstream_error",
+        message: "Text analysis service request failed",
+        status: 502,
+        path: "/api/tts/debug",
+      },
+    });
+  });
+
+  it("returns the shared runtime error envelope for unexpected failures", async () => {
+    const textAnalysisClient = createTextAnalysisClientMock({
+      analyze: vi.fn().mockRejectedValue(new Error("Boom")),
+    });
+
+    const ttsAdapterClient = createTtsAdapterClientMock();
+    app = createApp({ textAnalysisClient, ttsAdapterClient });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/tts/debug",
+      payload: {
+        text: "Hello there",
+      },
+    });
+
+    expect(response.statusCode).toBe(500);
+    expect(ttsAdapterClient.synthesize).not.toHaveBeenCalled();
+    expectTopLevelErrorEnvelope(response.json());
+    expect(response.json()).toEqual({
+      error: {
+        code: "internal_error",
+        message: "Internal server error",
+        status: 500,
+        path: "/api/tts/debug",
+      },
+    });
+  });
+});
+
 describe("gateway tts route", () => {
   let app = createApp();
 
@@ -210,120 +383,99 @@ describe("gateway tts route", () => {
   });
 
   it("calls analyze first, then synthesizes with the generated segments", async () => {
+    const analyzeResponse: AnalyzeResponseDto = {
+      segments: [
+        {
+          text: "Hello! :)",
+          emotion: "joy",
+          intensity: 3,
+          emoji: ["positive"],
+          punctuation: ["exclamation"],
+          pauseAfterMs: 250,
+        },
+      ],
+    };
+
     const textAnalysisClient = createTextAnalysisClientMock({
-      analyze: vi.fn().mockResolvedValue({
-        segments: [
-          {
-            text: "Hello! :)",
-            emotion: "joy",
-            intensity: 3,
-            emoji: ["positive"],
-            punctuation: ["exclamation"],
-            pauseAfterMs: 250,
-          },
-        ],
-      }),
+      analyze: vi.fn().mockResolvedValue(analyzeResponse),
     });
 
+    const synthesizeResponse: SynthesizeResponseDto = {
+      audioUrl: "/voice.wav",
+      metadata: {
+        format: "wav",
+        segments: analyzeResponse.segments,
+      },
+    };
+
     const ttsAdapterClient = createTtsAdapterClientMock({
-      synthesize: vi.fn().mockResolvedValue({
-        audioUrl: "/voice.wav",
-        metadata: {
-          format: "wav",
-          segments: [
-            {
-              text: "Hello! :)",
-              emotion: "joy",
-              intensity: 3,
-              emoji: ["positive"],
-              punctuation: ["exclamation"],
-              pauseAfterMs: 250,
-            },
-          ],
-        },
-      }),
+      synthesize: vi.fn().mockResolvedValue(synthesizeResponse),
     });
 
     app = createApp({ textAnalysisClient, ttsAdapterClient });
 
-    const response = await app.inject({
-      method: "POST",
-      url: "/api/tts",
-      payload: {
-        text: "Hello! :)",
-        voiceId: "voice-1",
-        metadata: {
-          format: "wav",
-        },
-      },
-    });
-
-    expect(response.statusCode).toBe(200);
-    expect(textAnalysisClient.analyze).toHaveBeenCalledWith({ text: "Hello! :)" });
-    expect(ttsAdapterClient.synthesize).toHaveBeenCalledWith({
+    const payload: SynthesizeRequestDto = {
       text: "Hello! :)",
       voiceId: "voice-1",
       metadata: {
         format: "wav",
-        segments: [
-          {
-            text: "Hello! :)",
-            emotion: "joy",
-            intensity: 3,
-            emoji: ["positive"],
-            punctuation: ["exclamation"],
-            pauseAfterMs: 250,
-          },
-        ],
       },
-    });
-    expect(response.json()).toEqual({
-      audioUrl: "/voice.wav",
+    };
+
+    const expectedSynthesizeRequest: SynthesizeRequestDto = {
+      text: "Hello! :)",
+      voiceId: "voice-1",
       metadata: {
         format: "wav",
-        segments: [
-          {
-            text: "Hello! :)",
-            emotion: "joy",
-            intensity: 3,
-            emoji: ["positive"],
-            punctuation: ["exclamation"],
-            pauseAfterMs: 250,
-          },
-        ],
+        segments: analyzeResponse.segments,
       },
+    };
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/tts",
+      payload,
     });
+
+    expect(response.statusCode).toBe(200);
+    expect(textAnalysisClient.analyze).toHaveBeenCalledWith({ text: payload.text });
+    expect(ttsAdapterClient.synthesize).toHaveBeenCalledWith(expectedSynthesizeRequest);
+    expect(response.json()).toEqual(synthesizeResponse);
   });
 
   it("uses analyze-generated segments instead of caller-supplied segments", async () => {
+    const analyzeResponse: AnalyzeResponseDto = {
+      segments: [{ text: "Analyzed", emotion: "neutral", intensity: 1, pauseAfterMs: 100 }],
+    };
+
     const textAnalysisClient = createTextAnalysisClientMock({
-      analyze: vi.fn().mockResolvedValue({
-        segments: [{ text: "Analyzed", emotion: "neutral", intensity: 1, pauseAfterMs: 100 }],
-      }),
+      analyze: vi.fn().mockResolvedValue(analyzeResponse),
     });
 
     const ttsAdapterClient = createTtsAdapterClientMock({
       synthesize: vi.fn().mockResolvedValue({
         audioUrl: "/voice.wav",
         metadata: {
-          segments: [{ text: "Analyzed", emotion: "neutral", intensity: 1, pauseAfterMs: 100 }],
+          segments: analyzeResponse.segments,
         },
       }),
     });
 
     app = createApp({ textAnalysisClient, ttsAdapterClient });
 
+    const payload: SynthesizeRequestDto = {
+      text: "Original",
+      voiceId: "voice-1",
+      metadata: {
+        format: "wav",
+        segments: [{ text: "Caller", emotion: "anger", intensity: 3 }],
+      },
+    };
+
     const response = await app.inject({
       method: "POST",
       url: "/api/tts",
-      payload: {
-        text: "Original",
-        voiceId: "voice-1",
-        metadata: {
-          format: "wav",
-          segments: [{ text: "Caller", emotion: "anger", intensity: 3 }],
-        },
-      },
+      payload,
     });
 
     expect(response.statusCode).toBe(200);
@@ -332,7 +484,7 @@ describe("gateway tts route", () => {
       voiceId: "voice-1",
       metadata: {
         format: "wav",
-        segments: [{ text: "Analyzed", emotion: "neutral", intensity: 1, pauseAfterMs: 100 }],
+        segments: analyzeResponse.segments,
       },
     });
   });
