@@ -104,11 +104,58 @@ Expected services:
 - text-analysis service;
 - Piper TTS adapter service;
 
+## Request Validation
+
+Gateway validates incoming payloads before calling downstream services.
+
+- `POST /api/analyze` requires `text` as a non-blank string and rejects unexpected fields.
+- `POST /api/tts` requires `text` and `voiceId` as non-blank strings.
+- `POST /api/tts` accepts only known top-level metadata fields: `format`, `emotion`, `intensity`.
+- `metadata.format` must be one of `wav`, `mp3`, or `ogg`.
+
+Validation failures return the shared API error envelope with HTTP `422` and do not call `text-analysis` or `tts-adapter`.
+
 ## Gateway upstream configuration
 
 Gateway calls the text-analysis service through `TEXT_ANALYSIS_URL` and the TTS adapter through `TTS_ADAPTER_URL`. The current defaults in `docker-compose.yml` are `http://text-analysis:8001` and `http://tts-adapter:8002`.
 
-Gateway normalizes upstream timeouts and failures from both services into its shared API error envelope. `/api/tts` now runs the real pipeline: gateway analyzes the input text first, then forwards the generated segment metadata to `tts-adapter`. `TEXT_ANALYSIS_TIMEOUT_MS` and `TTS_ADAPTER_TIMEOUT_MS` control the outbound timeouts and both default to `3000` milliseconds.
+Gateway normalizes upstream timeouts and failures from both services into its shared API error envelope. `/api/tts` runs the real pipeline: gateway analyzes the input text first, then forwards the generated segment metadata to `tts-adapter`. `TEXT_ANALYSIS_TIMEOUT_MS` and `TTS_ADAPTER_TIMEOUT_MS` control the outbound timeouts and both default to `3000` milliseconds.
+
+## Metadata Debug Endpoint
+
+`POST /api/tts/debug` exposes raw text-analysis metadata without running synthesis. This endpoint is intended for frontend debugging and QA inspection flows.
+
+Example request:
+
+```json
+{
+  "text": "Hello! :) How are you?"
+}
+```
+
+Example response:
+
+```json
+{
+  "segments": [
+    {
+      "text": "Hello! :)",
+      "emotion": "joy",
+      "intensity": 3,
+      "emoji": ["positive"],
+      "punctuation": ["exclamation"],
+      "pauseAfterMs": 250
+    },
+    {
+      "text": "How are you?",
+      "emotion": "neutral",
+      "intensity": 1,
+      "punctuation": ["question"],
+      "pauseAfterMs": 150
+    }
+  ]
+}
+```
 
 Example valid `POST /api/tts` body:
 
