@@ -121,6 +121,19 @@ Gateway calls the text-analysis service through `TEXT_ANALYSIS_URL` and the TTS 
 
 Gateway normalizes upstream timeouts and failures from both services into its shared API error envelope. `/api/tts` runs the real pipeline: gateway analyzes the input text first, then forwards the generated segment metadata to `tts-adapter`. `TEXT_ANALYSIS_TIMEOUT_MS` and `TTS_ADAPTER_TIMEOUT_MS` control the outbound timeouts and both default to `3000` milliseconds.
 
+## Text Analysis Internals
+
+`src/services/text-analysis/app/main.py` now stays focused on FastAPI wiring. The analysis pipeline lives in dedicated domain modules:
+
+- `app/domain/normalizer.py`
+- `app/domain/segmenter.py`
+- `app/domain/signal_extractor.py`
+- `app/domain/mapper.py`
+- `app/domain/planner.py`
+- `app/domain/service.py`
+
+This keeps the analysis rules easier to test and extend without changing the HTTP layer. Focused Python tests for these modules live under `src/services/text-analysis/tests/`.
+
 ## Metadata Debug Endpoint
 
 `POST /api/tts/debug` exposes raw text-analysis metadata without running synthesis. This endpoint is intended for frontend debugging and QA inspection flows.
