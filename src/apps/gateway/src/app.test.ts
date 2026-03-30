@@ -81,7 +81,7 @@ describe("gateway analyze route", () => {
     expect(response.json()).toEqual(analyzeResponse);
   });
 
-  it("returns the shared validation error envelope", async () => {
+  it("returns the shared validation error envelope when text is missing", async () => {
     const textAnalysisClient = createTextAnalysisClientMock();
     app = createApp({ textAnalysisClient });
 
@@ -105,6 +105,71 @@ describe("gateway analyze route", () => {
             location: "body.text",
             message: "must have required property 'text'",
             code: "required",
+          },
+        ],
+      },
+    });
+  });
+
+  it("fails fast when analyze text is blank or whitespace", async () => {
+    const textAnalysisClient = createTextAnalysisClientMock();
+    app = createApp({ textAnalysisClient });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/analyze",
+      payload: {
+        text: "   ",
+      },
+    });
+
+    expect(response.statusCode).toBe(422);
+    expect(textAnalysisClient.analyze).not.toHaveBeenCalled();
+    expectTopLevelErrorEnvelope(response.json());
+    expect(response.json()).toEqual({
+      error: {
+        code: "validation_error",
+        message: "Request validation failed",
+        status: 422,
+        path: "/api/analyze",
+        details: [
+          {
+            location: "body.text",
+            message: 'must match pattern "\\S"',
+            code: "pattern",
+          },
+        ],
+      },
+    });
+  });
+
+  it("fails fast when analyze payload contains unexpected fields", async () => {
+    const textAnalysisClient = createTextAnalysisClientMock();
+    app = createApp({ textAnalysisClient });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/analyze",
+      payload: {
+        text: "Hello",
+        debug: true,
+      },
+    });
+
+    expect(response.statusCode).toBe(422);
+    expect(textAnalysisClient.analyze).not.toHaveBeenCalled();
+    expectTopLevelErrorEnvelope(response.json());
+    expect(response.json()).toEqual({
+      error: {
+        code: "validation_error",
+        message: "Request validation failed",
+        status: 422,
+        path: "/api/analyze",
+        details: [
+          {
+            location: "body",
+            message: "must NOT have additional properties",
+            code: "additionalProperties",
           },
         ],
       },
@@ -404,6 +469,8 @@ describe("gateway tts route", () => {
       audioUrl: "/voice.wav",
       metadata: {
         format: "wav",
+        emotion: "anger",
+        intensity: 3,
         segments: analyzeResponse.segments,
       },
     };
@@ -443,7 +510,7 @@ describe("gateway tts route", () => {
     expect(response.json()).toEqual(synthesizeResponse);
   });
 
-  it("uses analyze-generated segments instead of caller-supplied segments", async () => {
+  it("uses analyze-generated segments when caller provides only allowed metadata fields", async () => {
     const analyzeResponse: AnalyzeResponseDto = {
       segments: [{ text: "Analyzed", emotion: "neutral", intensity: 1, pauseAfterMs: 100 }],
     };
@@ -468,7 +535,8 @@ describe("gateway tts route", () => {
       voiceId: "voice-1",
       metadata: {
         format: "wav",
-        segments: [{ text: "Caller", emotion: "anger", intensity: 3 }],
+        emotion: "anger",
+        intensity: 3,
       },
     };
 
@@ -484,6 +552,8 @@ describe("gateway tts route", () => {
       voiceId: "voice-1",
       metadata: {
         format: "wav",
+        emotion: "anger",
+        intensity: 3,
         segments: analyzeResponse.segments,
       },
     });
@@ -517,6 +587,150 @@ describe("gateway tts route", () => {
             location: "body.voiceId",
             message: "must have required property 'voiceId'",
             code: "required",
+          },
+        ],
+      },
+    });
+  });
+
+  it("fails fast when tts text is blank or whitespace", async () => {
+    const textAnalysisClient = createTextAnalysisClientMock();
+    const ttsAdapterClient = createTtsAdapterClientMock();
+    app = createApp({ textAnalysisClient, ttsAdapterClient });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/tts",
+      payload: {
+        text: "   ",
+        voiceId: "voice-1",
+      },
+    });
+
+    expect(response.statusCode).toBe(422);
+    expect(textAnalysisClient.analyze).not.toHaveBeenCalled();
+    expect(ttsAdapterClient.synthesize).not.toHaveBeenCalled();
+    expectTopLevelErrorEnvelope(response.json());
+    expect(response.json()).toEqual({
+      error: {
+        code: "validation_error",
+        message: "Request validation failed",
+        status: 422,
+        path: "/api/tts",
+        details: [
+          {
+            location: "body.text",
+            message: 'must match pattern "\\S"',
+            code: "pattern",
+          },
+        ],
+      },
+    });
+  });
+
+  it("fails fast when tts voiceId is blank or whitespace", async () => {
+    const textAnalysisClient = createTextAnalysisClientMock();
+    const ttsAdapterClient = createTtsAdapterClientMock();
+    app = createApp({ textAnalysisClient, ttsAdapterClient });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/tts",
+      payload: {
+        text: "Hello",
+        voiceId: "   ",
+      },
+    });
+
+    expect(response.statusCode).toBe(422);
+    expect(textAnalysisClient.analyze).not.toHaveBeenCalled();
+    expect(ttsAdapterClient.synthesize).not.toHaveBeenCalled();
+    expectTopLevelErrorEnvelope(response.json());
+    expect(response.json()).toEqual({
+      error: {
+        code: "validation_error",
+        message: "Request validation failed",
+        status: 422,
+        path: "/api/tts",
+        details: [
+          {
+            location: "body.voiceId",
+            message: 'must match pattern "\\S"',
+            code: "pattern",
+          },
+        ],
+      },
+    });
+  });
+
+  it("fails fast when tts payload contains unexpected fields", async () => {
+    const textAnalysisClient = createTextAnalysisClientMock();
+    const ttsAdapterClient = createTtsAdapterClientMock();
+    app = createApp({ textAnalysisClient, ttsAdapterClient });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/tts",
+      payload: {
+        text: "Hello",
+        voiceId: "voice-1",
+        debug: true,
+      },
+    });
+
+    expect(response.statusCode).toBe(422);
+    expect(textAnalysisClient.analyze).not.toHaveBeenCalled();
+    expect(ttsAdapterClient.synthesize).not.toHaveBeenCalled();
+    expectTopLevelErrorEnvelope(response.json());
+    expect(response.json()).toEqual({
+      error: {
+        code: "validation_error",
+        message: "Request validation failed",
+        status: 422,
+        path: "/api/tts",
+        details: [
+          {
+            location: "body",
+            message: "must NOT have additional properties",
+            code: "additionalProperties",
+          },
+        ],
+      },
+    });
+  });
+
+  it("fails fast when tts metadata.format is invalid", async () => {
+    const textAnalysisClient = createTextAnalysisClientMock();
+    const ttsAdapterClient = createTtsAdapterClientMock();
+    app = createApp({ textAnalysisClient, ttsAdapterClient });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/tts",
+      payload: {
+        text: "Hello",
+        voiceId: "voice-1",
+        metadata: {
+          format: "flac",
+        },
+      },
+    });
+
+    expect(response.statusCode).toBe(422);
+    expect(textAnalysisClient.analyze).not.toHaveBeenCalled();
+    expect(ttsAdapterClient.synthesize).not.toHaveBeenCalled();
+    expectTopLevelErrorEnvelope(response.json());
+    expect(response.json()).toEqual({
+      error: {
+        code: "validation_error",
+        message: "Request validation failed",
+        status: 422,
+        path: "/api/tts",
+        details: [
+          {
+            location: "body.metadata.format",
+            message: "must be equal to one of the allowed values",
+            code: "enum",
           },
         ],
       },

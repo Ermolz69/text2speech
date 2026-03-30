@@ -104,6 +104,17 @@ Expected services:
 - text-analysis service;
 - Piper TTS adapter service;
 
+## Request Validation
+
+Gateway validates incoming payloads before calling downstream services.
+
+- `POST /api/analyze` requires `text` as a non-blank string and rejects unexpected fields.
+- `POST /api/tts` requires `text` and `voiceId` as non-blank strings.
+- `POST /api/tts` accepts only known top-level metadata fields: `format`, `emotion`, `intensity`.
+- `metadata.format` must be one of `wav`, `mp3`, or `ogg`.
+
+Validation failures return the shared API error envelope with HTTP `422` and do not call `text-analysis` or `tts-adapter`.
+
 ## Gateway upstream configuration
 
 Gateway calls the text-analysis service through `TEXT_ANALYSIS_URL` and the TTS adapter through `TTS_ADAPTER_URL`. The current defaults in `docker-compose.yml` are `http://text-analysis:8001` and `http://tts-adapter:8002`.

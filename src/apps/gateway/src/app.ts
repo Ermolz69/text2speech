@@ -23,6 +23,7 @@ import {
 } from "./ttsAdapterClient";
 
 const port = Number(process.env.PORT_GATEWAY ?? 4000);
+const nonBlankStringPattern = "\\S";
 
 const emotionLabels: EmotionLabel[] = [
   "neutral",
@@ -47,48 +48,70 @@ type UpstreamClientErrorLike = {
   kind: "timeout" | "upstream";
 };
 
+type JsonSchema = {
+  type: string;
+  nullable?: boolean;
+  additionalProperties?: boolean;
+  required?: readonly string[];
+  properties?: Record<string, unknown>;
+  items?: unknown;
+  enum?: readonly unknown[];
+  minLength?: number;
+  minimum?: number;
+  pattern?: string;
+};
+
 export interface AppDependencies {
   textAnalysisClient?: TextAnalysisClient;
   ttsAdapterClient?: TtsAdapterClient;
 }
 
-const analyzeBodySchema = {
+const nonBlankStringSchema = {
+  type: "string",
+  minLength: 1,
+  pattern: nonBlankStringPattern,
+} as const;
+
+const sharedMetadataSchema = {
   type: "object",
+  nullable: true,
   additionalProperties: false,
-  required: ["text"],
   properties: {
-    text: { type: "string", minLength: 1 },
+    emotion: { type: "string", enum: emotionLabels },
+    intensity: { type: "integer", enum: [0, 1, 2, 3] },
+    format: { type: "string", enum: ["wav", "mp3", "ogg"] },
   },
 } as const;
 
-const synthesizeBodySchema = {
-  type: "object",
-  additionalProperties: false,
-  required: ["text", "voiceId"],
-  properties: {
-    text: { type: "string", minLength: 1 },
-    voiceId: { type: "string", minLength: 1 },
-    metadata: {
-      type: "object",
-      nullable: true,
-      additionalProperties: false,
-      properties: {
-        emotion: { type: "string", enum: emotionLabels },
-        intensity: { type: "integer", enum: [0, 1, 2, 3] },
-        format: { type: "string", enum: ["wav", "mp3", "ogg"] },
-      },
-    },
-  },
-} as const;
+function createBodySchema(
+  required: readonly string[],
+  properties: Record<string, JsonSchema | typeof nonBlankStringSchema>
+) {
+  return {
+    type: "object",
+    additionalProperties: false,
+    required,
+    properties,
+  } as const;
+}
+
+const analyzeBodySchema = createBodySchema(["text"], {
+  text: nonBlankStringSchema,
+});
+
+const synthesizeBodySchema = createBodySchema(["text", "voiceId"], {
+  text: nonBlankStringSchema,
+  voiceId: nonBlankStringSchema,
+  metadata: sharedMetadataSchema,
+});
 
 function getRequestPath(url: string): string {
   return url.split("?")[0] || "/";
 }
 
 function getValidationLocation(error: ValidationErrorShape): string {
-  const basePath = error.instancePath
-    ? error.instancePath.split("/").filter(Boolean).join(".")
-    : "body";
+  const pathSegments = error.instancePath?.split("/").filter(Boolean) ?? [];
+  const basePath = pathSegments.length > 0 ? `body.${pathSegments.join(".")}` : "body";
 
   if (error.keyword === "required" && typeof error.params.missingProperty === "string") {
     return `${basePath}.${error.params.missingProperty}`;
@@ -210,7 +233,14 @@ function buildSynthesizePipelineRequest(
 }
 
 export function createApp(dependencies: AppDependencies = {}): FastifyInstance {
-  const app = Fastify({ logger: true });
+  const app = Fastify({
+    logger: true,
+    ajv: {
+      customOptions: {
+        removeAdditional: false,
+      },
+    },
+  });
   const textAnalysisClient =
     dependencies.textAnalysisClient ?? createTextAnalysisClient(getTextAnalysisClientConfig());
   const ttsAdapterClient =
