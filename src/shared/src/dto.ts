@@ -20,6 +20,8 @@ export interface AnalyzeSegmentDto {
   emoji?: string[];
   punctuation?: string[];
   pauseAfterMs?: number;
+  rate?: number;
+  pitchHint?: number;
 }
 
 export interface AnalyzeResponseDto {

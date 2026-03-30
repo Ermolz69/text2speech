@@ -103,6 +103,8 @@ export function mapAnalyzeResponse(payload: unknown): AnalyzeResponseDto {
       emoji: pickCueValues(segment.cues, "emoji:"),
       punctuation: pickCueValues(segment.cues, "punctuation:"),
       pauseAfterMs: segment.pause_ms,
+      rate: segment.rate,
+      pitchHint: segment.pitch_hint,
     })),
   };
 }

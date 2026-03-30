@@ -112,8 +112,8 @@ export function mapSynthesizeRequest(payload: SynthesizeRequestDto): UpstreamSyn
       emotion: mapEmotion(segment.emotion),
       intensity: mapIntensity(segment.intensity),
       pause_ms: segment.pauseAfterMs ?? 0,
-      rate: 1,
-      pitch_hint: 0,
+      rate: segment.rate ?? 1,
+      pitch_hint: segment.pitchHint ?? 0,
       cues: [
         ...toCueValues(segment.emoji, "emoji:"),
         ...toCueValues(segment.punctuation, "punctuation:"),

@@ -52,6 +52,8 @@ describe("textAnalysisClient", () => {
           emoji: ["positive"],
           punctuation: ["exclamation"],
           pauseAfterMs: 250,
+          rate: 1.1,
+          pitchHint: 2,
         },
       ],
     });
@@ -147,6 +149,8 @@ describe("mapAnalyzeResponse", () => {
           emotion: "neutral",
           intensity: 0,
           pauseAfterMs: 150,
+          rate: 1,
+          pitchHint: 0,
         },
       ],
     });
