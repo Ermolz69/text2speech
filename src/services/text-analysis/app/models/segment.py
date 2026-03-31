@@ -4,6 +4,8 @@ from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.domain.normalizer import normalize_text
+
 
 class Emotion(str, Enum):
     NEUTRAL = "neutral"
@@ -34,7 +36,7 @@ class SegmentMetadata(BaseModel):
     @field_validator("text")
     @classmethod
     def validate_text(cls, value: str) -> str:
-        normalized = value.strip()
+        normalized = normalize_text(value)
         if not normalized:
             raise ValueError("text must not be blank")
         return normalized
@@ -52,7 +54,16 @@ class SegmentMetadata(BaseModel):
 
 class AnalyzeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
     text: str = Field(..., min_length=1)
+
+    @field_validator("text")
+    @classmethod
+    def normalize_request_text(cls, value: str) -> str:
+        normalized = normalize_text(value)
+        if not normalized:
+            raise ValueError("text must not be blank")
+        return normalized
 
 
 class AnalyzeResponse(BaseModel):
