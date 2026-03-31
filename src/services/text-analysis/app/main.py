@@ -91,7 +91,7 @@ def analyze(payload: AnalyzeRequest, request: Request) -> AnalyzeResponse:
     if request.headers.get("x-force-error") == "1":
         raise RuntimeError("Forced test runtime error")
 
-    text = payload.text.strip()
+    text = payload.text
 
     cues: list[str] = []
     emotion = Emotion.NEUTRAL
