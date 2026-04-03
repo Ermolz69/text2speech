@@ -9,9 +9,45 @@ The repository currently implements a working MVP pipeline with these characteri
 - the web app sends requests to the gateway only;
 - the gateway validates public payloads and orchestrates downstream services;
 - the text-analysis service normalizes text, splits it into segments, extracts cues, maps a small internal emotion set, and plans prosody;
-- the TTS adapter exposes a provider boundary and currently uses a Piper-backed placeholder provider implementation;
+- the TTS adapter exposes a provider boundary and the default provider invokes Piper CLI to generate a real WAV file;
 - `/api/tts/debug` returns gateway-shaped analysis metadata without synthesis;
-- `/api/tts` runs the full gateway pipeline and currently returns a placeholder audio URL.
+- `/api/tts` runs the full gateway pipeline and returns `audioUrl` from the adapter.
+
+## Read this first
+
+For the exact supported startup flow, use:
+
+- `docs/startup_runbook_ua.md`
+
+That file is the authoritative launch guide for the current repo state.
+
+## Quick start
+
+### Docker
+
+1. Put your Piper voice model in `models/piper/model.onnx`
+2. Put the matching config in `models/piper/model.onnx.json`
+3. Run:
+
+```bash
+docker compose up -d --build
+powershell -ExecutionPolicy Bypass -File scripts/smoke_check.ps1 -RequireSynthesisReady
+powershell -ExecutionPolicy Bypass -File scripts/synthesis_integration_check.ps1
+```
+
+### Verified starting voices
+
+- `en_US-lessac-medium`
+- `en_US-amy-medium`
+
+Official source list:
+
+- [Piper voice downloads](https://tderflinger.github.io/piper-docs/about/voices/download/)
+- [rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices)
+
+### Local
+
+Use the detailed runbook if you want all services on the host machine instead.
 
 ## Runtime topology
 
@@ -22,70 +58,15 @@ Default local ports from `docker-compose.yml`:
 - text-analysis: `8001`
 - tts-adapter: `8002`
 
-Internal gateway dependencies:
-
-- `TEXT_ANALYSIS_URL=http://text-analysis:8001`
-- `TTS_ADAPTER_URL=http://tts-adapter:8002`
-
 ## Public API summary
 
 ### `GET /health`
 
 Gateway health endpoint.
 
-Response:
-
-```json
-{
-  "status": "ok",
-  "service": "gateway"
-}
-```
-
 ### `POST /api/analyze`
 
 Validates `{ "text": string }` and returns gateway-shaped segment metadata.
-
-Example request:
-
-```json
-{
-  "text": "Hello! :) How are you?"
-}
-```
-
-Example response:
-
-```json
-{
-  "segments": [
-    {
-      "text": "Hello! :)",
-      "emotion": "joy",
-      "intensity": 3,
-      "emoji": ["positive"],
-      "punctuation": ["exclamation"],
-      "pauseAfterMs": 150,
-      "rate": 1.1,
-      "pitchHint": 2
-    },
-    {
-      "text": "How are you?",
-      "emotion": "neutral",
-      "intensity": 0,
-      "punctuation": ["question"],
-      "pauseAfterMs": 150,
-      "rate": 1,
-      "pitchHint": 1
-    }
-  ]
-}
-```
-
-Notes:
-
-- gateway labels are public DTO labels such as `neutral`, `joy`, and `sadness`;
-- internal Python labels are different (`neutral`, `happy`, `sad`) and are mapped by the gateway client layer.
 
 ### `POST /api/tts/debug`
 
@@ -95,47 +76,7 @@ Runs the same analysis as `/api/analyze` and returns the same gateway-shaped met
 
 Validates a synthesis request and runs the gateway pipeline.
 
-Example request:
-
-```json
-{
-  "text": "Hello! :) How are you?",
-  "voiceId": "voice-1",
-  "metadata": {
-    "format": "wav"
-  }
-}
-```
-
-Current response shape:
-
-```json
-{
-  "audioUrl": "/audio/generated-example.wav",
-  "metadata": {
-    "format": "wav",
-    "segments": [
-      {
-        "text": "Hello! :)",
-        "emotion": "joy",
-        "intensity": 3,
-        "emoji": ["positive"],
-        "punctuation": ["exclamation"],
-        "pauseAfterMs": 150,
-        "rate": 1.1,
-        "pitchHint": 2
-      }
-    ]
-  }
-}
-```
-
-Notes:
-
-- `voiceId` is required by the public API, while the current adapter forwards analyzed segments to the Piper-backed TTS adapter;
-- `metadata.format` accepts `wav`, `mp3`, or `ogg`;
-- `metadata.emotion` accepts the public gateway labels: `neutral`, `joy`, `playful`, `sadness`, `anger`, `fear`, `surprise`;
-- `metadata.intensity` accepts `0..3`.
+The resulting `audioUrl` now points to a real downloadable WAV when the Piper model is present.
 
 ## Internal services
 
@@ -151,12 +92,6 @@ Current internal pipeline:
 4. map internal emotions (`neutral`, `happy`, `sad`);
 5. compute prosody hints per segment.
 
-Direct endpoint:
-
-- `POST /analyze`
-- response fields use snake_case: `pause_ms`, `pitch_hint`, `cues`
-- internal emotion labels are `neutral`, `happy`, `sad`
-
 ### TTS adapter
 
 FastAPI service at `src/services/tts-adapter`.
@@ -164,25 +99,19 @@ FastAPI service at `src/services/tts-adapter`.
 Current direct endpoint:
 
 - `POST /synthesize`
-- request body contains analyzed `segments`
-- response currently returns:
-  - `audio_url`
-  - `received_segments`
-  - `total_pause_ms`
+- `GET /health`
+- `GET /health/ready`
 
-The endpoint now delegates through a provider abstraction and the default Piper provider writes generated WAV files that are exposed under `/audio/<file>.wav`.
+The endpoint delegates through a provider abstraction and the default Piper provider writes generated WAV files that are exposed under `/audio/<file>.wav`.
 
 ## Local development
 
-### Docker
+Use `docs/startup_runbook_ua.md` for the exact startup sequence.
+
+Useful workspace commands:
 
 ```bash
-docker compose up --build
-```
-
-### Workspace commands
-
-```bash
+pnpm install
 pnpm dev:web
 pnpm dev:gateway
 pnpm build
@@ -190,20 +119,11 @@ pnpm test
 pnpm lint
 ```
 
-### Python service tests
-
-```bash
-cd src/services/text-analysis
-py -m pytest -q
-
-cd ../tts-adapter
-py -m pytest -q
-```
-
 ## Documentation index
 
 Supporting documentation lives in `docs/`:
 
+- `docs/startup_runbook_ua.md`
 - `docs/docs_index_ua.md`
 - `docs/backend_architecture_ua.md`
 - `docs/frontend_architecture_ua.md`

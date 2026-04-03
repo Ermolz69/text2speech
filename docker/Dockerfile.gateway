@@ -1,9 +1,6 @@
 FROM node:20-alpine
 WORKDIR /app
-COPY package.json pnpm-workspace.yaml tsconfig.base.json ./
-COPY src/apps/gateway/package.json src/apps/gateway/
-RUN corepack enable && pnpm install --filter gateway...
 COPY . .
-RUN pnpm --filter gateway build
-CMD ["node", "src/apps/gateway/dist/app.js"]
-
+RUN corepack enable && pnpm install --frozen-lockfile
+RUN pnpm --filter shared build && pnpm --filter gateway build
+CMD ["pnpm", "--filter", "gateway", "dev"]

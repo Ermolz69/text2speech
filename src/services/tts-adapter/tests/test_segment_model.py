@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -5,6 +7,73 @@ from app.models.segment import SegmentMetadata
 from app.providers.base import SynthesisResult
 
 client = TestClient(app, raise_server_exceptions=False)
+
+
+def test_health_reports_readiness_from_provider() -> None:
+    class ReadyProvider:
+        def get_readiness(self) -> dict[str, object]:
+            return {
+                "ready": True,
+                "binary_available": True,
+                "model_configured": True,
+                "model_exists": True,
+            }
+
+        def synthesize(self, segments: list[SegmentMetadata]) -> SynthesisResult:
+            return SynthesisResult(
+                audio_url="/stub.wav",
+                received_segments=len(segments),
+                total_pause_ms=0,
+            )
+
+    app.state.synthesis_provider = ReadyProvider()
+
+    try:
+        response = client.get("/health")
+        ready_response = client.get("/health/ready")
+    finally:
+        del app.state.synthesis_provider
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ok",
+        "service": "tts-adapter",
+        "readiness": {
+            "ready": True,
+            "binary_available": True,
+            "model_configured": True,
+            "model_exists": True,
+        },
+    }
+    assert ready_response.status_code == 200
+    assert ready_response.json()["ready"] is True
+
+
+def test_health_ready_returns_503_when_provider_is_not_ready() -> None:
+    class NotReadyProvider:
+        def get_readiness(self) -> dict[str, object]:
+            return {
+                "ready": False,
+                "binary_available": True,
+                "model_configured": True,
+                "model_exists": False,
+            }
+
+        def synthesize(self, segments: list[SegmentMetadata]) -> SynthesisResult:
+            raise AssertionError('synthesize should not be called')
+
+    app.state.synthesis_provider = NotReadyProvider()
+
+    try:
+        response = client.get('/health')
+        ready_response = client.get('/health/ready')
+    finally:
+        del app.state.synthesis_provider
+
+    assert response.status_code == 200
+    assert response.json()['status'] == 'degraded'
+    assert ready_response.status_code == 503
+    assert ready_response.json()['ready'] is False
 
 
 def test_synthesize_accepts_segment_structure() -> None:

@@ -1,26 +1,27 @@
-# Індекс документації
+# Documentation Index
 
-Цей каталог описує поточний стан реалізації, а не backlog або roadmap.
+This directory describes the current implementation state, not backlog or roadmap ideas.
 
-## Основні документи
+## Core documents
 
-- `backend_architecture_ua.md` — поточна серверна архітектура, ролі gateway, text-analysis та tts-adapter
-- `frontend_architecture_ua.md` — структура web-додатка і поточний UI flow
-- `python_text_analysis_service_ua.md` — внутрішній контракт і пайплайн сервісу аналізу тексту
-- `piper_integration_ua.md` — provider boundary у tts-adapter і поточна роль Piper provider
-- `ffmpeg_pipeline_ua.md` — що реально є зараз навколо ffmpeg і що поки не реалізовано
-- `development_ua.md` — локальний запуск, тести, docker і робочі команди
-- `project_structure_ua.md` — актуальна структура monorepo
-- `initial_plan_ua.md` — коротка фіксація поточного baseline замість застарілого стартового опису
+- `startup_runbook_ua.md` - authoritative launch guide and exact supported startup modes
+- `backend_architecture_ua.md` - current server-side architecture and roles of gateway, text-analysis, and tts-adapter
+- `frontend_architecture_ua.md` - current web app structure and UI flow
+- `python_text_analysis_service_ua.md` - internal contract and pipeline of the text-analysis service
+- `piper_integration_ua.md` - provider boundary in tts-adapter and the current role of Piper
+- `ffmpeg_pipeline_ua.md` - what is currently implemented around ffmpeg and what is still not implemented
+- `development_ua.md` - workspace commands, tests, and links to the supported runbook
+- `project_structure_ua.md` - current monorepo structure
+- `initial_plan_ua.md` - short baseline snapshot instead of outdated startup assumptions
 
-## Що вважати джерелом правди
+## Sources of truth
 
-1. Код у `src/apps/*` та `src/services/*`
+1. Code in `src/apps/*` and `src/services/*`
 2. `docker-compose.yml`
 3. `postman/EmotionTTS.postman_collection.json`
-4. Документи з цього каталогу
+4. the documents in this directory
 
-## Що не використовувати як джерело поточної реалізації
+## What not to treat as current implementation truth
 
-- будь-які `roadmap` файли
-- історичні припущення з backlog, якщо вони не підтверджені кодом
+- any roadmap files
+- historical backlog assumptions that are not confirmed by code

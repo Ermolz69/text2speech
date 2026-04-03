@@ -1,36 +1,53 @@
 # Development Guide
 
-## Передумови
+## Prerequisites
 
-Для поточного monorepo потрібні:
+For the current monorepo state you need:
 
 - Node.js 20+
-- pnpm
+- `pnpm`
 - Python 3.11+
-- Docker Desktop для docker-based запуску
+- Docker Desktop for container startup
+- Piper model files for real synthesis
 
-## Важливе правило репозиторію
+## Important repo rule
 
-Використовуємо тільки `pnpm` для JavaScript/TypeScript workspace-команд.
+Use only `pnpm` for JavaScript and TypeScript workspace commands.
 
-## Швидкий старт через Docker
+## Authoritative startup guide
 
-```bash
-docker compose up --build
+Use [`startup_runbook_ua.md`](./startup_runbook_ua.md) as the source of truth for launch instructions.
+
+## Current recommended startup
+
+Recommended default:
+
+- put the Piper model in `models/piper/model.onnx`
+- put the matching config in `models/piper/model.onnx.json`
+- run `docker compose up -d --build`
+- run `scripts/smoke_check.ps1 -RequireSynthesisReady`
+- run `scripts/synthesis_integration_check.ps1`
+
+## Verification commands
+
+General stack readiness:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/smoke_check.ps1 -RequireSynthesisReady
 ```
 
-Після запуску доступні:
+Real audio generation:
 
-- web: `http://localhost:5173`
-- gateway: `http://localhost:4000`
-- text-analysis: `http://localhost:8001`
-- tts-adapter: `http://localhost:8002`
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/synthesis_integration_check.ps1
+```
 
-## Локальні workspace-команди
+## Workspace commands
 
-З кореня репозиторію:
+From the repo root:
 
 ```bash
+pnpm install
 pnpm dev:web
 pnpm dev:gateway
 pnpm build
@@ -38,46 +55,7 @@ pnpm test
 pnpm lint
 ```
 
-## Команди окремих apps
+## Docker note
 
-### Web
-
-```bash
-pnpm --dir src/apps/web dev
-pnpm --dir src/apps/web test
-pnpm --dir src/apps/web build
-```
-
-### Gateway
-
-```bash
-pnpm --dir src/apps/gateway dev
-pnpm --dir src/apps/gateway test
-pnpm --dir src/apps/gateway build
-```
-
-## Python сервіси
-
-### Text analysis
-
-```bash
-cd src/services/text-analysis
-py -m pip install -e .[dev]
-py -m pytest -q
-py -m uvicorn app.main:app --reload --port 8001
-```
-
-### TTS adapter
-
-```bash
-cd src/services/tts-adapter
-py -m pip install -e .[dev]
-py -m pytest -q
-py -m uvicorn app.main:app --reload --port 8002
-```
-
-## Рекомендована перевірка після змін
-
-- для web/gateway/shared: відповідні `pnpm ... test` або `pnpm test`
-- для Python сервісів: `py -m pytest -q` у відповідному каталозі
-- для змін у документації/Postman: ручна звірка прикладів з поточним кодом endpoint-ів
+The Docker setup now uses `healthcheck` sections for all services and waits on healthy dependencies instead of plain container start order.
+For real synthesis in Docker, keep the Piper model in `models/piper/` so it is mounted into the `tts-adapter` container.

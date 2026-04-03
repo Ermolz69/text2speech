@@ -89,17 +89,53 @@ async def handle_runtime_error(
     )
 
 
-@app.get("/health")
-def health() -> dict:
-    return {"status": "ok", "service": "tts-adapter"}
-
-
 def get_synthesis_provider(request: Request) -> SynthesisProvider:
     provider = getattr(request.app.state, "synthesis_provider", None)
     if provider is None:
         provider = PiperSynthesisProvider()
         request.app.state.synthesis_provider = provider
     return provider
+
+
+def get_provider_readiness(provider: SynthesisProvider) -> dict[str, Any] | None:
+    readiness_getter = getattr(provider, "get_readiness", None)
+    if callable(readiness_getter):
+        readiness = readiness_getter()
+        if isinstance(readiness, dict):
+            return readiness
+    return None
+
+
+@app.get("/health")
+def health(request: Request) -> dict[str, Any]:
+    provider = get_synthesis_provider(request)
+    readiness = get_provider_readiness(provider)
+    ready = readiness.get("ready") if readiness else None
+
+    payload: dict[str, Any] = {
+        "status": "ok" if ready is not False else "degraded",
+        "service": "tts-adapter",
+    }
+    if readiness is not None:
+        payload["readiness"] = readiness
+    return payload
+
+
+@app.get("/health/ready")
+def health_ready(request: Request) -> JSONResponse:
+    provider = get_synthesis_provider(request)
+    readiness = get_provider_readiness(provider)
+    ready = bool(readiness and readiness.get("ready"))
+
+    return JSONResponse(
+        status_code=200 if ready else 503,
+        content={
+            "status": "ok" if ready else "degraded",
+            "service": "tts-adapter",
+            "ready": ready,
+            "readiness": readiness or {"ready": False},
+        },
+    )
 
 
 @app.post("/synthesize")
