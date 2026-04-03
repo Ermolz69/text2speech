@@ -17,7 +17,7 @@ def normalize_text(text: str) -> str:
     value = text.replace("\r\n", "\n").replace("\r", "\n")
     value = value.replace("\u00A0", " ")
     value = value.replace("\u200B", "")
-    value = value.replace("…", "...")
+    value = value.replace("\u2026", "...")
 
     value = _COLLAPSE_WHITESPACE_RE.sub(" ", value)
     value = _SPACE_BEFORE_PUNCT_RE.sub(r"\1", value)
