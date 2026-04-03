@@ -36,10 +36,9 @@ class SegmentMetadata(BaseModel):
     @field_validator("text")
     @classmethod
     def validate_text(cls, value: str) -> str:
-        normalized = normalize_text(value)
-        if not normalized:
+        if not value.strip():
             raise ValueError("text must not be blank")
-        return normalized
+        return value
 
     @field_validator("cues")
     @classmethod

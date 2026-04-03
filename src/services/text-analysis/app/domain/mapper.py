@@ -1,0 +1,27 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from app.domain.signal_extractor import ExtractedSignals
+from app.models.segment import Emotion
+
+
+@dataclass(frozen=True)
+class EmotionMapping:
+    emotion: Emotion
+    intensity: float
+
+
+def map_emotion(signals: ExtractedSignals) -> EmotionMapping:
+    emotion = Emotion.NEUTRAL
+    intensity = 0.0
+
+    if signals.has_exclamation:
+        emotion = Emotion.EXCITED
+        intensity = 0.7
+
+    if signals.has_positive_emoji:
+        emotion = Emotion.HAPPY
+        intensity = max(intensity, 0.6)
+
+    return EmotionMapping(emotion=emotion, intensity=intensity)

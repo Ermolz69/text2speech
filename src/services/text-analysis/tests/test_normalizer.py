@@ -1,6 +1,10 @@
 from app.domain.normalizer import normalize_text
 
 
+def test_normalize_text_trims_whitespace() -> None:
+    assert normalize_text("  Hello! :)  ") == "Hello! :)"
+
+
 def test_normalize_text_collapses_whitespace() -> None:
     assert normalize_text("  Hello \n\t world  ") == "Hello world"
 
@@ -10,7 +14,7 @@ def test_normalize_text_removes_space_before_punctuation() -> None:
 
 
 def test_normalize_text_normalizes_unicode_ellipsis() -> None:
-    assert normalize_text("Wait …") == "Wait..."
+    assert normalize_text("Wait \u2026") == "Wait..."
 
 
 def test_normalize_text_collapses_repeated_punctuation() -> None:
