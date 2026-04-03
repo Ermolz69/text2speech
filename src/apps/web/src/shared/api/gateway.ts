@@ -7,6 +7,11 @@ import type {
 
 const API_BASE_URL = "/api";
 
+export interface HealthResponse {
+  status: "ok" | string;
+  service: string;
+}
+
 async function parseJsonResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     throw new Error(`Gateway request failed with status ${response.status}`);
@@ -39,4 +44,12 @@ export async function synthesizeText(
   });
 
   return parseJsonResponse<SynthesizeResponseDto>(response);
+}
+
+export async function getHealth(): Promise<HealthResponse> {
+  const response = await fetch("/health", {
+    method: "GET",
+  });
+
+  return parseJsonResponse<HealthResponse>(response);
 }

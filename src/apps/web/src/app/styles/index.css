@@ -1,0 +1,10 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply m-0 min-h-screen bg-[radial-gradient(circle_at_16%_12%,#d6eadf_0%,transparent_36%),radial-gradient(circle_at_82%_18%,#f6d2bb_0%,transparent_34%),linear-gradient(160deg,#f6f3ea_0%,#efe7d7_100%)] text-stone-900 antialiased;
+    font-family: "Avenir Next", "Segoe UI", sans-serif;
+  }
+}
