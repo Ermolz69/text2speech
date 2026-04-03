@@ -111,7 +111,7 @@ Current response shape:
 
 ```json
 {
-  "audioUrl": "/placeholder.wav",
+  "audioUrl": "/audio/generated-example.wav",
   "metadata": {
     "format": "wav",
     "segments": [
@@ -132,7 +132,7 @@ Current response shape:
 
 Notes:
 
-- `voiceId` is required by the public API even though the current adapter implementation still returns a placeholder URL;
+- `voiceId` is required by the public API, while the current adapter forwards analyzed segments to the Piper-backed TTS adapter;
 - `metadata.format` accepts `wav`, `mp3`, or `ogg`;
 - `metadata.emotion` accepts the public gateway labels: `neutral`, `joy`, `playful`, `sadness`, `anger`, `fear`, `surprise`;
 - `metadata.intensity` accepts `0..3`.
@@ -170,7 +170,7 @@ Current direct endpoint:
   - `received_segments`
   - `total_pause_ms`
 
-The endpoint now delegates through a provider abstraction instead of hardcoding Piper logic in the route.
+The endpoint now delegates through a provider abstraction and the default Piper provider writes generated WAV files that are exposed under `/audio/<file>.wav`.
 
 ## Local development
 

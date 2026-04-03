@@ -5,11 +5,18 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.models.segment import SynthesizeRequest
 from app.providers import PiperSynthesisProvider, SynthesisProvider
+from app.providers.piper import DEFAULT_AUDIO_ROUTE, resolve_audio_output_dir
 
 app = FastAPI(title="TTS Adapter Service")
+app.mount(
+    DEFAULT_AUDIO_ROUTE,
+    StaticFiles(directory=resolve_audio_output_dir(), check_dir=False),
+    name="generated-audio",
+)
 
 
 def create_api_error_response(

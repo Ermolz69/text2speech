@@ -8,6 +8,15 @@ client = TestClient(app, raise_server_exceptions=False)
 
 
 def test_synthesize_accepts_segment_structure() -> None:
+    class StubProvider:
+        def synthesize(self, segments: list[SegmentMetadata]) -> SynthesisResult:
+            return SynthesisResult(
+                audio_url="/stub.wav",
+                received_segments=len(segments),
+                total_pause_ms=sum(segment.pause_ms for segment in segments),
+            )
+
+    app.state.synthesis_provider = StubProvider()
     payload = {
         "segments": [
             {
@@ -22,12 +31,18 @@ def test_synthesize_accepts_segment_structure() -> None:
         ]
     }
 
-    response = client.post("/synthesize", json=payload)
+    try:
+        response = client.post("/synthesize", json=payload)
+    finally:
+        del app.state.synthesis_provider
 
     assert response.status_code == 200
     body = response.json()
-    assert body["received_segments"] == 1
-    assert body["total_pause_ms"] == 250
+    assert body == {
+        "audio_url": "/stub.wav",
+        "received_segments": 1,
+        "total_pause_ms": 250,
+    }
 
 
 def test_synthesize_delegates_to_configured_provider() -> None:
