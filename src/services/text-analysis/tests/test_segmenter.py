@@ -24,6 +24,10 @@ def test_split_segments_splits_on_ellipsis() -> None:
     assert split_segments("Wait... What now?") == ["Wait...", "What now?"]
 
 
+def test_split_segments_keeps_mixed_punctuation_together() -> None:
+    assert split_segments("Really?! Next.") == ["Really?!", "Next."]
+
+
 def test_split_segments_keeps_trailing_emoticon_with_segment() -> None:
     assert split_segments("Hello! :) How are you?") == ["Hello! :)", "How are you?"]
 

@@ -16,6 +16,9 @@ def test_plan_segment_combines_emotion_and_prosody_rules() -> None:
             has_question=True,
             has_ellipsis=True,
             has_positive_emoji=True,
+            has_mixed_punctuation=False,
+            has_repeated_exclamation=False,
+            has_repeated_question=False,
         ),
     )
 

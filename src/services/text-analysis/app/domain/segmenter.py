@@ -54,6 +54,8 @@ def split_segments(text: str) -> list[str]:
 def _boundary_length(text: str, index: int) -> int:
     if text.startswith("...", index):
         return 3
+    if text.startswith("?!", index) or text.startswith("!?", index):
+        return 2
     if text[index] in ".!?":
         return 1
     return 0

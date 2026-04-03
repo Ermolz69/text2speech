@@ -75,6 +75,19 @@ def test_analyze_returns_multiple_segments_with_independent_metadata() -> None:
     assert "punctuation:question" in body["segments"][1]["cues"]
 
 
+
+def test_analyze_exposes_mixed_punctuation_cue_in_segment_metadata() -> None:
+    response = client.post("/analyze", json={"text": "Really?!"})
+
+    assert response.status_code == 200
+    body = response.json()
+    segment = body["segments"][0]
+
+    assert segment["text"] == "Really?!"
+    assert "punctuation:exclamation" in segment["cues"]
+    assert "punctuation:question" in segment["cues"]
+    assert "punctuation:mixed" in segment["cues"]
+    assert segment["emotion"] == "excited"
 def test_analyze_splits_normalized_repeated_punctuation_into_multiple_segments() -> None:
     response = client.post("/analyze", json={"text": "Hello!!! What???"})
 
@@ -134,3 +147,4 @@ def test_analyze_runtime_errors_use_shared_envelope() -> None:
             "path": "/analyze",
         }
     }
+
