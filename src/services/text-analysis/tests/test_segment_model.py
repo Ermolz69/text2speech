@@ -48,7 +48,8 @@ def test_analyze_normalizes_repeated_punctuation_before_analysis() -> None:
 
     assert segment["text"] == "Hello!"
     assert "punctuation:exclamation" in segment["cues"]
-    assert segment["emotion"] == "excited"
+    assert segment["emotion"] == "neutral"
+    assert segment["intensity"] == 0.0
 
 
 def test_analyze_normalizes_basic_text_noise_and_ellipsis() -> None:
@@ -59,6 +60,8 @@ def test_analyze_normalizes_basic_text_noise_and_ellipsis() -> None:
     segment = body["segments"][0]
 
     assert segment["text"] == "Wait..."
+    assert segment["emotion"] == "sad"
+    assert segment["intensity"] == 0.4
     assert "punctuation:ellipsis" in segment["cues"]
     assert segment["pause_ms"] == 300
 
@@ -72,8 +75,8 @@ def test_analyze_returns_multiple_segments_with_independent_metadata() -> None:
     assert body["segments"][0]["emotion"] == "happy"
     assert "emoji:positive" in body["segments"][0]["cues"]
     assert body["segments"][1]["emotion"] == "neutral"
+    assert body["segments"][1]["intensity"] == 0.0
     assert "punctuation:question" in body["segments"][1]["cues"]
-
 
 
 def test_analyze_exposes_mixed_punctuation_cue_in_segment_metadata() -> None:
@@ -87,15 +90,20 @@ def test_analyze_exposes_mixed_punctuation_cue_in_segment_metadata() -> None:
     assert "punctuation:exclamation" in segment["cues"]
     assert "punctuation:question" in segment["cues"]
     assert "punctuation:mixed" in segment["cues"]
-    assert segment["emotion"] == "excited"
+    assert segment["emotion"] == "neutral"
+    assert segment["intensity"] == 0.0
+
+
 def test_analyze_splits_normalized_repeated_punctuation_into_multiple_segments() -> None:
     response = client.post("/analyze", json={"text": "Hello!!! What???"})
 
     assert response.status_code == 200
     body = response.json()
     assert [segment["text"] for segment in body["segments"]] == ["Hello!", "What?"]
-    assert body["segments"][0]["emotion"] == "excited"
+    assert body["segments"][0]["emotion"] == "neutral"
+    assert body["segments"][0]["intensity"] == 0.0
     assert "punctuation:question" in body["segments"][1]["cues"]
+    assert body["segments"][1]["emotion"] == "neutral"
 
 
 def test_analyze_validation_errors_use_shared_envelope() -> None:
@@ -147,4 +155,3 @@ def test_analyze_runtime_errors_use_shared_envelope() -> None:
             "path": "/analyze",
         }
     }
-
