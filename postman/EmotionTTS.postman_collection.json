@@ -1,34 +1,125 @@
 {
   "info": {
-    "name": "Emotion TTS MVP",
+    "name": "Emotion TTS Local",
     "_postman_id": "00000000-0000-0000-0000-000000000000",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
     {
-      "name": "Gateway health",
-      "request": {
-        "method": "GET",
-        "url": "{{gateway_url}}/health"
-      }
+      "name": "Gateway",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "url": "{{gateway_url}}/health"
+          }
+        },
+        {
+          "name": "Analyze",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Hello! :) How are you?\"\n}"
+            },
+            "url": "{{gateway_url}}/api/analyze"
+          }
+        },
+        {
+          "name": "TTS debug",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Hello! :) How are you?\"\n}"
+            },
+            "url": "{{gateway_url}}/api/tts/debug"
+          }
+        },
+        {
+          "name": "Synthesize",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Hello! :) How are you?\",\n  \"voiceId\": \"voice-1\",\n  \"metadata\": {\n    \"format\": \"wav\"\n  }\n}"
+            },
+            "url": "{{gateway_url}}/api/tts"
+          }
+        }
+      ]
     },
     {
-      "name": "TTS request",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Content-Type",
-            "value": "application/json"
+      "name": "Internal services",
+      "item": [
+        {
+          "name": "Text analysis health",
+          "request": {
+            "method": "GET",
+            "url": "{{text_analysis_url}}/health"
           }
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\"text\": \"I am so happy to see you 😊😊!\"}"
         },
-        "url": "{{gateway_url}}/api/tts"
-      }
+        {
+          "name": "Text analysis analyze",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Wait... Really?! :)\"\n}"
+            },
+            "url": "{{text_analysis_url}}/analyze"
+          }
+        },
+        {
+          "name": "TTS adapter health",
+          "request": {
+            "method": "GET",
+            "url": "{{tts_adapter_url}}/health"
+          }
+        },
+        {
+          "name": "TTS adapter synthesize",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"segments\": [\n    {\n      \"text\": \"Hello! :)\",\n      \"emotion\": \"happy\",\n      \"intensity\": 0.7,\n      \"pause_ms\": 150,\n      \"rate\": 1.1,\n      \"pitch_hint\": 2.0,\n      \"cues\": [\"emoji:positive\", \"punctuation:exclamation\"]\n    }\n  ]\n}"
+            },
+            "url": "{{tts_adapter_url}}/synthesize"
+          }
+        }
+      ]
     }
   ]
 }
-

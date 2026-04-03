@@ -1,142 +1,50 @@
-[![CI](https://github.com/Ermolz69/text2speech/actions/workflows/ci.yml/badge.svg?style=for-the-badge)](https://github.com/Ermolz69/text2speech/actions/workflows/ci.yml)
-[![GitHub Repo stars](https://img.shields.io/github/stars/Ermolz69/text2speech)](https://github.com/Ermolz69/text2speech/stargazers)
-![GitHub last commit](https://img.shields.io/github/last-commit/Ermolz69/text2speech)
-![GitHub issues](https://img.shields.io/github/issues/Ermolz69/text2speech)
-![GitHub pull requests](https://img.shields.io/github/issues-pr/Ermolz69/text2speech)
-
 # Emotional TTS
 
-Local MVP for **emotion-aware text-to-speech** where expression is inferred from emoji, punctuation, and simple contextual text signals.
+Emotion-aware text-to-speech monorepo with a React web app, a Fastify gateway, a Python text-analysis service, and a Python TTS adapter.
 
-## Overview
+## Current status
 
-This repository contains a prototype pipeline that:
+The repository currently implements a working MVP pipeline with these characteristics:
 
-- accepts text with emoji and punctuation cues;
-- parses emotional signals from text;
-- builds structured emotional metadata;
-- synthesizes speech with **Piper**;
-- compares neutral and expressive outputs;
-- supports benchmarking against stronger references such as **ElevenLabs**.
+- the web app sends requests to the gateway only;
+- the gateway validates public payloads and orchestrates downstream services;
+- the text-analysis service normalizes text, splits it into segments, extracts cues, maps a small internal emotion set, and plans prosody;
+- the TTS adapter exposes a provider boundary and currently uses a Piper-backed placeholder provider implementation;
+- `/api/tts/debug` returns gateway-shaped analysis metadata without synthesis;
+- `/api/tts` runs the full gateway pipeline and currently returns a placeholder audio URL.
 
-## Status
+## Runtime topology
 
-**Roadmap / MVP planning + implementation setup**
+Default local ports from `docker-compose.yml`:
 
-## Pipeline
+- web: `5173`
+- gateway: `4000`
+- text-analysis: `8001`
+- tts-adapter: `8002`
 
-```text
-text
-  -> normalizer
-  -> segmenter
-  -> emoji/context parser
-  -> emotion mapping
-  -> prosody planning
-  -> Piper TTS
-  -> post-processing
-  -> audio output + evaluation
+Internal gateway dependencies:
+
+- `TEXT_ANALYSIS_URL=http://text-analysis:8001`
+- `TTS_ADAPTER_URL=http://tts-adapter:8002`
+
+## Public API summary
+
+### `GET /health`
+
+Gateway health endpoint.
+
+Response:
+
+```json
+{
+  "status": "ok",
+  "service": "gateway"
+}
 ```
 
-## Core stack
+### `POST /api/analyze`
 
-- Frontend: React + TypeScript
-- Gateway backend: TypeScript + Fastify
-- Text analysis service: Python (FastAPI)
-- TTS service: Piper (Python adapter + ffmpeg)
-- Docker / Docker Compose
-
-## Documentation
-
-- [Roadmap (EN)](./roadmap.md)
-- [Roadmap (RU)](./roadmap_RU.md)
-- [Roadmap (UA)](./roadmap_UA.md)
-
-## Planned structure
-
-```text
-project-root/
-  src/
-    apps/
-      web/
-      gateway/
-    services/
-      text-analysis/
-      tts-adapter/
-    shared/
-  docs/
-  benchmarks/
-  reports/
-  docker/
-  postman/
-  README.md
-```
-
-## MVP scope
-
-Included:
-
-- text input with emoji and punctuation;
-- rule-based parsing;
-- emotion mapping;
-- segment-level metadata;
-- local synthesis with Piper;
-- basic objective and subjective evaluation.
-
-Not included:
-
-- training a new TTS model from scratch;
-- full STT + TTS workflow;
-- production-scale deployment;
-- voice cloning as a primary goal.
-
-## Quick start
-
-```bash
-git clone https://github.com/Ermolz69/text2speech.git
-cd text2speech
-docker compose up --build
-```
-
-Expected services:
-
-- web app;
-- gateway backend;
-- text-analysis service;
-- Piper TTS adapter service;
-
-## Request Validation
-
-Gateway validates incoming payloads before calling downstream services.
-
-- `POST /api/analyze` requires `text` as a non-blank string and rejects unexpected fields.
-- `POST /api/tts` requires `text` and `voiceId` as non-blank strings.
-- `POST /api/tts` accepts only known top-level metadata fields: `format`, `emotion`, `intensity`.
-- `metadata.format` must be one of `wav`, `mp3`, or `ogg`.
-
-Validation failures return the shared API error envelope with HTTP `422` and do not call `text-analysis` or `tts-adapter`.
-
-## Gateway upstream configuration
-
-Gateway calls the text-analysis service through `TEXT_ANALYSIS_URL` and the TTS adapter through `TTS_ADAPTER_URL`. The current defaults in `docker-compose.yml` are `http://text-analysis:8001` and `http://tts-adapter:8002`.
-
-Gateway normalizes upstream timeouts and failures from both services into its shared API error envelope. `/api/tts` runs the real pipeline: gateway analyzes the input text first, then forwards the generated segment metadata to `tts-adapter`. `TEXT_ANALYSIS_TIMEOUT_MS` and `TTS_ADAPTER_TIMEOUT_MS` control the outbound timeouts and both default to `3000` milliseconds.
-
-## Text Analysis Internals
-
-`src/services/text-analysis/app/main.py` now stays focused on FastAPI wiring. The analysis pipeline lives in dedicated domain modules:
-
-- `app/domain/normalizer.py`
-- `app/domain/segmenter.py`
-- `app/domain/signal_extractor.py`
-- `app/domain/mapper.py`
-- `app/domain/planner.py`
-- `app/domain/service.py`
-
-This keeps the analysis rules easier to test and extend without changing the HTTP layer. Focused Python tests for these modules live under `src/services/text-analysis/tests/`.
-
-## Metadata Debug Endpoint
-
-`POST /api/tts/debug` exposes raw text-analysis metadata without running synthesis. This endpoint is intended for frontend debugging and QA inspection flows.
+Validates `{ "text": string }` and returns gateway-shaped segment metadata.
 
 Example request:
 
@@ -157,20 +65,37 @@ Example response:
       "intensity": 3,
       "emoji": ["positive"],
       "punctuation": ["exclamation"],
-      "pauseAfterMs": 250
+      "pauseAfterMs": 150,
+      "rate": 1.1,
+      "pitchHint": 2
     },
     {
       "text": "How are you?",
       "emotion": "neutral",
-      "intensity": 1,
+      "intensity": 0,
       "punctuation": ["question"],
-      "pauseAfterMs": 150
+      "pauseAfterMs": 150,
+      "rate": 1,
+      "pitchHint": 1
     }
   ]
 }
 ```
 
-Example valid `POST /api/tts` body:
+Notes:
+
+- gateway labels are public DTO labels such as `neutral`, `joy`, and `sadness`;
+- internal Python labels are different (`neutral`, `happy`, `sad`) and are mapped by the gateway client layer.
+
+### `POST /api/tts/debug`
+
+Runs the same analysis as `/api/analyze` and returns the same gateway-shaped metadata.
+
+### `POST /api/tts`
+
+Validates a synthesis request and runs the gateway pipeline.
+
+Example request:
 
 ```json
 {
@@ -182,44 +107,111 @@ Example valid `POST /api/tts` body:
 }
 ```
 
-## Common API error response
-
-Gateway and Python services now return the same top-level error JSON envelope for validation and runtime failures. The language-neutral source of truth lives in `src/shared/src/api-error.schema.json`.
+Current response shape:
 
 ```json
 {
-  "error": {
-    "code": "validation_error",
-    "message": "Request validation failed",
-    "status": 422,
-    "path": "/api/analyze",
-    "details": [
+  "audioUrl": "/placeholder.wav",
+  "metadata": {
+    "format": "wav",
+    "segments": [
       {
-        "location": "body.text",
-        "message": "Field required",
-        "code": "missing"
+        "text": "Hello! :)",
+        "emotion": "joy",
+        "intensity": 3,
+        "emoji": ["positive"],
+        "punctuation": ["exclamation"],
+        "pauseAfterMs": 150,
+        "rate": 1.1,
+        "pitchHint": 2
       }
     ]
   }
 }
 ```
 
-Runtime failures use the same envelope with `code: "internal_error"` and omit `details` when there are no structured validation issues.
+Notes:
 
-## Benchmarking
+- `voiceId` is required by the public API even though the current adapter implementation still returns a placeholder URL;
+- `metadata.format` accepts `wav`, `mp3`, or `ogg`;
+- `metadata.emotion` accepts the public gateway labels: `neutral`, `joy`, `playful`, `sadness`, `anger`, `fear`, `surprise`;
+- `metadata.intensity` accepts `0..3`.
 
-Planned comparison levels:
+## Internal services
 
-1. Piper neutral vs Piper expressive pipeline
-2. Piper vs ElevenLabs
-3. Synthetic audio vs human reference audio
+### Text analysis service
 
-## Notes
+FastAPI service at `src/services/text-analysis`.
 
-- **Piper** is the main local synthesis engine.
-- **librosa** is used for evaluation, not generation.
-- **ElevenLabs** is used as a benchmark/reference, not as the base for the free local MVP.
+Current internal pipeline:
 
-## License
+1. normalize whitespace and punctuation noise;
+2. split text into sentence-like segments;
+3. extract emoji and punctuation cues;
+4. map internal emotions (`neutral`, `happy`, `sad`);
+5. compute prosody hints per segment.
 
-Add the project license here.
+Direct endpoint:
+
+- `POST /analyze`
+- response fields use snake_case: `pause_ms`, `pitch_hint`, `cues`
+- internal emotion labels are `neutral`, `happy`, `sad`
+
+### TTS adapter
+
+FastAPI service at `src/services/tts-adapter`.
+
+Current direct endpoint:
+
+- `POST /synthesize`
+- request body contains analyzed `segments`
+- response currently returns:
+  - `audio_url`
+  - `received_segments`
+  - `total_pause_ms`
+
+The endpoint now delegates through a provider abstraction instead of hardcoding Piper logic in the route.
+
+## Local development
+
+### Docker
+
+```bash
+docker compose up --build
+```
+
+### Workspace commands
+
+```bash
+pnpm dev:web
+pnpm dev:gateway
+pnpm build
+pnpm test
+pnpm lint
+```
+
+### Python service tests
+
+```bash
+cd src/services/text-analysis
+py -m pytest -q
+
+cd ../tts-adapter
+py -m pytest -q
+```
+
+## Documentation index
+
+Supporting documentation lives in `docs/`:
+
+- `docs/docs_index_ua.md`
+- `docs/backend_architecture_ua.md`
+- `docs/frontend_architecture_ua.md`
+- `docs/python_text_analysis_service_ua.md`
+- `docs/piper_integration_ua.md`
+- `docs/ffmpeg_pipeline_ua.md`
+- `docs/development_ua.md`
+- `docs/project_structure_ua.md`
+- `docs/initial_plan_ua.md`
+
+Roadmap files remain separate and are intentionally not used as implementation truth.

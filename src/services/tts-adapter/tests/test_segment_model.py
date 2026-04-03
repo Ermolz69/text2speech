@@ -1,6 +1,8 @@
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.models.segment import SegmentMetadata
+from app.providers.base import SynthesisResult
 
 client = TestClient(app, raise_server_exceptions=False)
 
@@ -26,6 +28,50 @@ def test_synthesize_accepts_segment_structure() -> None:
     body = response.json()
     assert body["received_segments"] == 1
     assert body["total_pause_ms"] == 250
+
+
+def test_synthesize_delegates_to_configured_provider() -> None:
+    class StubProvider:
+        def __init__(self) -> None:
+            self.calls: list[list[SegmentMetadata]] = []
+
+        def synthesize(self, segments: list[SegmentMetadata]) -> SynthesisResult:
+            self.calls.append(segments)
+            return SynthesisResult(
+                audio_url="/stub.wav",
+                received_segments=len(segments),
+                total_pause_ms=999,
+            )
+
+    provider = StubProvider()
+    app.state.synthesis_provider = provider
+    payload = {
+        "segments": [
+            {
+                "text": "Hello",
+                "emotion": "neutral",
+                "intensity": 0.0,
+                "pause_ms": 10,
+                "rate": 1.0,
+                "pitch_hint": 0.0,
+                "cues": [],
+            }
+        ]
+    }
+
+    try:
+        response = client.post("/synthesize", json=payload)
+    finally:
+        del app.state.synthesis_provider
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "audio_url": "/stub.wav",
+        "received_segments": 1,
+        "total_pause_ms": 999,
+    }
+    assert len(provider.calls) == 1
+    assert provider.calls[0][0].text == "Hello"
 
 
 def test_synthesize_validation_errors_use_shared_envelope() -> None:

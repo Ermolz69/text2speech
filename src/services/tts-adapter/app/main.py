@@ -7,6 +7,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app.models.segment import SynthesizeRequest
+from app.providers import PiperSynthesisProvider, SynthesisProvider
 
 app = FastAPI(title="TTS Adapter Service")
 
@@ -86,15 +87,23 @@ def health() -> dict:
     return {"status": "ok", "service": "tts-adapter"}
 
 
+def get_synthesis_provider(request: Request) -> SynthesisProvider:
+    provider = getattr(request.app.state, "synthesis_provider", None)
+    if provider is None:
+        provider = PiperSynthesisProvider()
+        request.app.state.synthesis_provider = provider
+    return provider
+
+
 @app.post("/synthesize")
 def synthesize(payload: SynthesizeRequest, request: Request) -> dict:
     if request.headers.get("x-force-error") == "1":
         raise RuntimeError("Forced test runtime error")
 
-    total_pause_ms = sum(segment.pause_ms for segment in payload.segments)
+    result = get_synthesis_provider(request).synthesize(payload.segments)
 
     return {
-        "audio_url": "/placeholder.wav",
-        "received_segments": len(payload.segments),
-        "total_pause_ms": total_pause_ms,
+        "audio_url": result.audio_url,
+        "received_segments": result.received_segments,
+        "total_pause_ms": result.total_pause_ms,
     }
