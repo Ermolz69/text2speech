@@ -6,6 +6,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+Import-Module (Join-Path $PSScriptRoot 'modules/AudioRegressionTools.psm1') -Force
 
 $parent = Split-Path -Parent $OutputPath
 if ($parent) {
@@ -13,19 +14,16 @@ if ($parent) {
 }
 
 Write-Host 'Requesting /api/tts through web...'
-$response = Invoke-RestMethod -Method Post -Uri "$WebUrl/api/tts" -ContentType 'application/json' -Body (@{
+$response = Invoke-WithRetry -OperationName "synthesis request" -Action { Invoke-JsonPost "$WebUrl/api/tts" @{
   text = $Text
   voiceId = $VoiceId
   metadata = @{ format = 'wav' }
-} | ConvertTo-Json -Depth 10 -Compress)
-
-if (-not $response.audioUrl) {
-  throw "Synthesis response did not contain audioUrl: $($response | ConvertTo-Json -Depth 10)"
-}
+} }
+Assert-SynthesisResponse -Payload $response
 
 $audioUri = "$WebUrl$($response.audioUrl)"
 Write-Host "Downloading generated audio from $audioUri ..."
-$download = Invoke-WebRequest -UseBasicParsing -Uri $audioUri -OutFile $OutputPath -PassThru
+$download = Invoke-WithRetry -OperationName "synthesis audio download" -Action { Invoke-AudioDownload -Uri $audioUri -OutputPath $OutputPath }
 $file = Get-Item $OutputPath
 
 if ($download.StatusCode -ne 200) {
@@ -46,6 +44,8 @@ Write-Host 'Synthesis integration summary:'
   AudioUrl = $response.audioUrl
   OutputPath = $file.FullName
   Bytes = $file.Length
+  DurationMs = (Get-WavDurationMs -Path $file.FullName)
   ContentType = $download.Headers['Content-Type']
   SegmentCount = @($response.metadata.segments).Count
 } | Format-List
+

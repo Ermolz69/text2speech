@@ -82,7 +82,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          'python -c "import urllib.request; urllib.request.urlopen(''http://127.0.0.1:8002/health/ready'')"',
+          'python -c "import urllib.request; urllib.request.urlopen(''http://127.0.0.1:8002/health'')"',
         ]
       interval: 10s
       timeout: 5s

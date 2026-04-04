@@ -14,13 +14,13 @@ import {
   getTextAnalysisClientConfig,
   TextAnalysisClientError,
   type TextAnalysisClient,
-} from "./textAnalysisClient";
+} from "./textAnalysisClient.js";
 import {
   createTtsAdapterClient,
   getTtsAdapterClientConfig,
   TtsAdapterClientError,
   type TtsAdapterClient,
-} from "./ttsAdapterClient";
+} from "./ttsAdapterClient.js";
 
 const port = Number(process.env.PORT_GATEWAY ?? 4000);
 const nonBlankStringPattern = "\\S";
