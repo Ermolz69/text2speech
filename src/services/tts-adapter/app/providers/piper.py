@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import tempfile
 import wave
+from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 
@@ -17,19 +18,36 @@ DEFAULT_AUDIO_ROUTE = "/audio"
 DEFAULT_AUDIO_OUTPUT_DIR = Path(__file__).resolve().parents[2] / "generated-audio"
 POSITIVE_EMOTICONS = (":)", ":D", "=)", "^^")
 POSITIVE_UNICODE_EMOJIS = (
-    "??",
-    "??",
-    "??",
-    "??",
-    "??",
-    "??",
-    "??",
-    "??",
-    "??",
+    "\U0001F60A",
+    "\U0001F604",
+    "\U0001F603",
+    "\U0001F642",
+    "\U0001F601",
+    "\U0001F606",
+    "\U0001F609",
+    "\U0001F60D",
+    "\U0001F970",
 )
 NON_SPOKEN_MARKERS = tuple(sorted((*POSITIVE_EMOTICONS, *POSITIVE_UNICODE_EMOJIS), key=len, reverse=True))
 COLLAPSE_WHITESPACE_RE = re.compile(r"\s+")
 SPACE_BEFORE_PUNCT_RE = re.compile(r"\s+([,!?;.])")
+
+
+@dataclass(frozen=True)
+class PreparedSegmentSynthesis:
+    index: int
+    original_text: str
+    spoken_text: str
+    pause_ms: int
+    rate: float
+    pitch_hint: float
+    length_scale: float
+
+
+@dataclass(frozen=True)
+class PreparedSynthesisPlan:
+    segments: tuple[PreparedSegmentSynthesis, ...]
+    total_pause_ms: int
 
 
 def resolve_audio_output_dir(output_dir: str | Path | None = None) -> Path:
@@ -75,13 +93,13 @@ class PiperSynthesisProvider(SynthesisProvider):
         }
 
     def synthesize(self, segments: list[SegmentMetadata]) -> SynthesisResult:
-        total_pause_ms = sum(segment.pause_ms for segment in segments)
-        audio_path = self._synthesize_segments(segments)
+        plan = self._prepare_synthesis_plan(segments)
+        audio_path = self._synthesize_segments(plan)
 
         return SynthesisResult(
             audio_url=f"{self.audio_route}/{audio_path.name}",
             received_segments=len(segments),
-            total_pause_ms=total_pause_ms,
+            total_pause_ms=plan.total_pause_ms,
         )
 
     def _binary_available(self, binary: str) -> bool:
@@ -90,41 +108,57 @@ class PiperSynthesisProvider(SynthesisProvider):
             return True
         return shutil.which(binary) is not None
 
-    def _synthesize_segments(self, segments: list[SegmentMetadata]) -> Path:
-        self._assert_ready()
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+    def _prepare_synthesis_plan(self, segments: list[SegmentMetadata]) -> PreparedSynthesisPlan:
+        prepared_segments: list[PreparedSegmentSynthesis] = []
 
-        spoken_segments = [
-            (segment, self._sanitize_spoken_text(segment.text))
-            for segment in segments
-        ]
-        spoken_segments = [
-            (segment, spoken_text) for segment, spoken_text in spoken_segments if spoken_text
-        ]
+        for index, segment in enumerate(segments):
+            spoken_text = self._sanitize_spoken_text(segment.text)
+            if not spoken_text:
+                continue
 
-        if not spoken_segments:
+            prepared_segments.append(
+                PreparedSegmentSynthesis(
+                    index=index,
+                    original_text=segment.text,
+                    spoken_text=spoken_text,
+                    pause_ms=segment.pause_ms,
+                    rate=segment.rate,
+                    pitch_hint=segment.pitch_hint,
+                    length_scale=self._to_length_scale(segment.rate),
+                )
+            )
+
+        if not prepared_segments:
             raise RuntimeError("No spoken text available for Piper synthesis")
 
+        return PreparedSynthesisPlan(
+            segments=tuple(prepared_segments),
+            total_pause_ms=sum(segment.pause_ms for segment in prepared_segments),
+        )
+
+    def _synthesize_segments(self, plan: PreparedSynthesisPlan) -> Path:
+        self._assert_ready()
+        self.output_dir.mkdir(parents=True, exist_ok=True)
         output_path = self.output_dir / f"{uuid4().hex}.wav"
 
         with tempfile.TemporaryDirectory(dir=self.output_dir) as temp_dir_name:
             temp_dir = Path(temp_dir_name)
             concat_inputs: list[Path] = []
 
-            for index, (segment, spoken_text) in enumerate(spoken_segments):
-                raw_segment_path = temp_dir / f"segment-{index}.wav"
-                processed_segment_path = temp_dir / f"segment-{index}-processed.wav"
+            for prepared in plan.segments:
+                raw_segment_path = temp_dir / f"segment-{prepared.index}.wav"
+                processed_segment_path = temp_dir / f"segment-{prepared.index}-processed.wav"
 
-                self._run_piper(spoken_text, segment.rate, raw_segment_path)
-                self._apply_pitch_hint(raw_segment_path, processed_segment_path, segment.pitch_hint)
+                self._run_piper(prepared, raw_segment_path)
+                self._apply_pitch_hint(raw_segment_path, processed_segment_path, prepared.pitch_hint)
                 concat_inputs.append(processed_segment_path)
 
-                if segment.pause_ms > 0:
-                    pause_path = temp_dir / f"pause-{index}.wav"
+                if prepared.pause_ms > 0:
+                    pause_path = temp_dir / f"pause-{prepared.index}.wav"
                     sample_rate, channels, sample_width = self._read_wav_format(processed_segment_path)
                     self._create_silence_wav(
                         pause_path,
-                        duration_ms=segment.pause_ms,
+                        duration_ms=prepared.pause_ms,
                         sample_rate=sample_rate,
                         channels=channels,
                         sample_width=sample_width,
@@ -157,9 +191,10 @@ class PiperSynthesisProvider(SynthesisProvider):
         cleaned = SPACE_BEFORE_PUNCT_RE.sub(r"\1", cleaned)
         return cleaned.strip()
 
-    def _run_piper(self, text: str, rate: float, output_path: Path) -> None:
-        length_scale = max(0.5, min(2.0, 1.0 / rate))
+    def _to_length_scale(self, rate: float) -> float:
+        return max(0.5, min(2.0, 1.0 / rate))
 
+    def _run_piper(self, prepared: PreparedSegmentSynthesis, output_path: Path) -> None:
         subprocess.run(
             [
                 self.piper_bin,
@@ -168,11 +203,11 @@ class PiperSynthesisProvider(SynthesisProvider):
                 "--output_file",
                 str(output_path),
                 "--length-scale",
-                f"{length_scale:.3f}",
+                f"{prepared.length_scale:.3f}",
                 "--sentence-silence",
                 "0",
             ],
-            input=text,
+            input=prepared.spoken_text,
             text=True,
             capture_output=True,
             check=True,

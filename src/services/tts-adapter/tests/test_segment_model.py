@@ -1,4 +1,3 @@
-
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -14,6 +13,7 @@ def test_health_reports_readiness_from_provider() -> None:
             return {
                 "ready": True,
                 "binary_available": True,
+                "ffmpeg_available": True,
                 "model_configured": True,
                 "model_exists": True,
             }
@@ -40,6 +40,7 @@ def test_health_reports_readiness_from_provider() -> None:
         "readiness": {
             "ready": True,
             "binary_available": True,
+            "ffmpeg_available": True,
             "model_configured": True,
             "model_exists": True,
         },
@@ -48,31 +49,34 @@ def test_health_reports_readiness_from_provider() -> None:
     assert ready_response.json()["ready"] is True
 
 
+
 def test_health_ready_returns_503_when_provider_is_not_ready() -> None:
     class NotReadyProvider:
         def get_readiness(self) -> dict[str, object]:
             return {
                 "ready": False,
                 "binary_available": True,
+                "ffmpeg_available": False,
                 "model_configured": True,
                 "model_exists": False,
             }
 
         def synthesize(self, segments: list[SegmentMetadata]) -> SynthesisResult:
-            raise AssertionError('synthesize should not be called')
+            raise AssertionError("synthesize should not be called")
 
     app.state.synthesis_provider = NotReadyProvider()
 
     try:
-        response = client.get('/health')
-        ready_response = client.get('/health/ready')
+        response = client.get("/health")
+        ready_response = client.get("/health/ready")
     finally:
         del app.state.synthesis_provider
 
     assert response.status_code == 200
-    assert response.json()['status'] == 'degraded'
+    assert response.json()["status"] == "degraded"
     assert ready_response.status_code == 503
-    assert ready_response.json()['ready'] is False
+    assert ready_response.json()["ready"] is False
+
 
 
 def test_synthesize_accepts_segment_structure() -> None:
@@ -92,8 +96,8 @@ def test_synthesize_accepts_segment_structure() -> None:
                 "emotion": "happy",
                 "intensity": 0.8,
                 "pause_ms": 250,
-                "rate": 1.1,
-                "pitch_hint": 2.0,
+                "rate": 1.18,
+                "pitch_hint": 3.0,
                 "cues": ["emoji:positive", "punctuation:exclamation"],
             }
         ]
@@ -111,6 +115,7 @@ def test_synthesize_accepts_segment_structure() -> None:
         "received_segments": 1,
         "total_pause_ms": 250,
     }
+
 
 
 def test_synthesize_delegates_to_configured_provider() -> None:
@@ -157,6 +162,7 @@ def test_synthesize_delegates_to_configured_provider() -> None:
     assert provider.calls[0][0].text == "Hello"
 
 
+
 def test_synthesize_validation_errors_use_shared_envelope() -> None:
     response = client.post("/synthesize", json={})
 
@@ -176,6 +182,7 @@ def test_synthesize_validation_errors_use_shared_envelope() -> None:
             ],
         }
     }
+
 
 
 def test_synthesize_runtime_errors_use_shared_envelope() -> None:
@@ -208,6 +215,7 @@ def test_synthesize_runtime_errors_use_shared_envelope() -> None:
             "path": "/synthesize",
         }
     }
+
 
 
 def test_synthesize_rejects_unknown_fields_with_shared_envelope() -> None:

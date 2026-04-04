@@ -26,6 +26,7 @@ def make_wav_bytes(*, sample_rate: int = 22050, duration_ms: int = 50) -> bytes:
 
 
 WAV_BYTES = make_wav_bytes()
+SMILING_FACE = "\U0001F60A"
 
 
 def test_piper_provider_reports_not_ready_when_model_is_missing(tmp_path: Path) -> None:
@@ -48,6 +49,31 @@ def test_piper_provider_reports_not_ready_when_model_is_missing(tmp_path: Path) 
         "model_exists": False,
         "ready": False,
     }
+
+
+def test_prepare_synthesis_plan_makes_segment_assembly_explicit(tmp_path: Path) -> None:
+    provider = PiperSynthesisProvider(
+        piper_bin="piper-bin",
+        ffmpeg_bin="ffmpeg-bin",
+        model_path=tmp_path / "test.onnx",
+        output_dir=tmp_path,
+    )
+
+    plan = provider._prepare_synthesis_plan(
+        [
+            SegmentMetadata(text=f"Hello! {SMILING_FACE}", pause_ms=120, rate=1.25, pitch_hint=2.0),
+            SegmentMetadata(text=":)", pause_ms=80, rate=1.0, pitch_hint=0.0),
+            SegmentMetadata(text="How are you?", pause_ms=80, rate=0.8, pitch_hint=-2.0),
+        ]
+    )
+
+    assert plan.total_pause_ms == 200
+    assert len(plan.segments) == 2
+    assert plan.segments[0].original_text == f"Hello! {SMILING_FACE}"
+    assert plan.segments[0].spoken_text == "Hello!"
+    assert plan.segments[0].length_scale == 0.8
+    assert plan.segments[1].spoken_text == "How are you?"
+    assert plan.segments[1].length_scale == 1.25
 
 
 def test_piper_provider_invokes_cli_per_segment_and_strips_non_spoken_markers(
@@ -89,7 +115,7 @@ def test_piper_provider_invokes_cli_per_segment_and_strips_non_spoken_markers(
 
     result = provider.synthesize(
         [
-            SegmentMetadata(text="Hello! ??", pause_ms=120, rate=1.25, pitch_hint=2.0),
+            SegmentMetadata(text=f"Hello! {SMILING_FACE}", pause_ms=120, rate=1.25, pitch_hint=2.0),
             SegmentMetadata(text=":)", pause_ms=80, rate=1.0, pitch_hint=0.0),
             SegmentMetadata(text="How are you?", pause_ms=80, rate=0.8, pitch_hint=-2.0),
         ]
@@ -99,7 +125,7 @@ def test_piper_provider_invokes_cli_per_segment_and_strips_non_spoken_markers(
     ffmpeg_calls = [call for call in calls if Path(call["command"][0]).name == "ffmpeg-bin"]
 
     assert result.received_segments == 3
-    assert result.total_pause_ms == 280
+    assert result.total_pause_ms == 200
     assert result.audio_url.startswith("/audio/")
     assert len(piper_calls) == 2
     assert piper_calls[0]["input"] == "Hello!"
@@ -146,12 +172,12 @@ def test_synthesize_serves_generated_wav_from_piper_provider(monkeypatch, tmp_pa
     payload = {
         "segments": [
             {
-                "text": "Hello! ??",
+                "text": f"Hello! {SMILING_FACE}",
                 "emotion": "happy",
                 "intensity": 0.8,
                 "pause_ms": 250,
-                "rate": 1.1,
-                "pitch_hint": 2.0,
+                "rate": 1.18,
+                "pitch_hint": 3.0,
                 "cues": ["emoji:positive", "punctuation:exclamation"],
             }
         ]
