@@ -82,7 +82,7 @@ describe("HomePage interactions", () => {
       },
     });
 
-    expect(await screen.findByText("success")).toBeTruthy();
+    expect(await screen.findByText("done")).toBeTruthy();
     expect(screen.getAllByText("happy").length).toBeGreaterThan(0);
     expect(screen.getByText((content) => /\d+ ms/.test(content))).toBeTruthy();
     expect(screen.getByRole("link", { name: "Download audio" }).getAttribute("href")).toBe(

@@ -11,7 +11,7 @@ describe("HomePage", () => {
     expect(html).toContain("Run synthesis");
     expect(html).toContain("Voice 1");
     expect(html).toContain("Voice 2");
-    expect(html).toContain("Status:");
+    expect(html).toContain("idle");
     expect(html).toContain("Audio will appear here after a successful request.");
     expect(html).toContain("No segments to display yet.");
     expect(html).toContain("Hi");
