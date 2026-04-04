@@ -42,6 +42,20 @@ Real audio generation:
 powershell -ExecutionPolicy Bypass -File scripts/synthesis_integration_check.ps1
 ```
 
+Coverage across the tested services:
+
+```powershell
+pnpm coverage
+```
+
+If you want to run only one part:
+
+```powershell
+pnpm coverage:web
+pnpm coverage:gateway
+py -m pytest -q --cov=app --cov-report=term-missing --cov-report=json:coverage/coverage.json --cov-report=html:coverage/html
+```
+
 ## Workspace commands
 
 From the repo root:
@@ -53,7 +67,16 @@ pnpm dev:gateway
 pnpm build
 pnpm test
 pnpm lint
+pnpm coverage
 ```
+
+## CI coverage
+
+The main CI workflow now:
+
+- runs coverage for `web`, `gateway`, `text-analysis`, and `tts-adapter`
+- uploads each coverage directory as an artifact
+- writes a compact per-service coverage table into the GitHub Actions job summary
 
 ## Docker note
 

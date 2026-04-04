@@ -11,12 +11,14 @@
     "build": "tsc -p tsconfig.json",
     "lint": "eslint \"src/**/*.ts\"",
     "format": "prettier --write \"src/**/*.{ts,js,json,md}\"",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "coverage": "vitest run --passWithNoTests --coverage.enabled --coverage.provider=v8 --coverage.reporter=text --coverage.reporter=json-summary --coverage.reporter=html"
   },
   "dependencies": {
     "zod": "^3.23.0"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "^1.4.0",
     "typescript": "^5.4.0",
     "eslint": "^9.0.0",
     "prettier": "^3.2.5",

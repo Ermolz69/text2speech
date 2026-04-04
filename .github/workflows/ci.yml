@@ -7,7 +7,7 @@ on:
 
 jobs:
   web:
-    name: Web | lint + typecheck + build
+    name: Web | lint + typecheck + build + coverage
     runs-on: ubuntu-latest
 
     steps:
@@ -25,7 +25,7 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
       - name: Lint web
         run: pnpm --dir src/apps/web run lint
@@ -36,11 +36,45 @@ jobs:
       - name: Build web
         run: pnpm --dir src/apps/web run build
 
-      - name: Test web
-        run: pnpm --dir src/apps/web run --if-present test
+      - name: Test web with coverage
+        run: pnpm --dir src/apps/web run --if-present coverage
+
+      - name: Upload web coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-web
+          path: src/apps/web/coverage
+          if-no-files-found: ignore
+
+      - name: Append web coverage summary
+        if: always()
+        shell: bash
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const summaryPath = 'src/apps/web/coverage/coverage-summary.json';
+          if (!fs.existsSync(summaryPath)) {
+            console.log('No web coverage summary found.');
+            process.exit(0);
+          }
+          const summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8')).total;
+          const lines = [
+            '## Web coverage',
+            '',
+            '| Metric | Percent |',
+            '| --- | ---: |',
+            `| Lines | ${summary.lines.pct}% |`,
+            `| Statements | ${summary.statements.pct}% |`,
+            `| Functions | ${summary.functions.pct}% |`,
+            `| Branches | ${summary.branches.pct}% |`,
+            ''
+          ];
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join('\n'));
+          NODE
 
   gateway:
-    name: Gateway | lint + typecheck + build
+    name: Gateway | lint + typecheck + build + coverage
     runs-on: ubuntu-latest
 
     steps:
@@ -58,7 +92,7 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
       - name: Lint gateway
         run: pnpm --dir src/apps/gateway run lint
@@ -69,56 +103,167 @@ jobs:
       - name: Build gateway
         run: pnpm --dir src/apps/gateway run build
 
-      - name: Test gateway
-        run: pnpm --dir src/apps/gateway run --if-present test
+      - name: Test gateway with coverage
+        run: pnpm --dir src/apps/gateway run --if-present coverage
+
+      - name: Upload gateway coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-gateway
+          path: src/apps/gateway/coverage
+          if-no-files-found: ignore
+
+      - name: Append gateway coverage summary
+        if: always()
+        shell: bash
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const summaryPath = 'src/apps/gateway/coverage/coverage-summary.json';
+          if (!fs.existsSync(summaryPath)) {
+            console.log('No gateway coverage summary found.');
+            process.exit(0);
+          }
+          const summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8')).total;
+          const lines = [
+            '## Gateway coverage',
+            '',
+            '| Metric | Percent |',
+            '| --- | ---: |',
+            `| Lines | ${summary.lines.pct}% |`,
+            `| Statements | ${summary.statements.pct}% |`,
+            `| Functions | ${summary.functions.pct}% |`,
+            `| Branches | ${summary.branches.pct}% |`,
+            ''
+          ];
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join('\n'));
+          NODE
 
   text_analysis:
-    name: Python | lint + test
+    name: Python | text-analysis | lint + test + coverage
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Detect Python service files
-        id: detect
-        run: |
-          if [ -f src/services/text-analysis/pyproject.toml ] || [ -f src/services/text-analysis/requirements.txt ]; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Setup Python
-        if: steps.detect.outputs.exists == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: Install dependencies
-        if: steps.detect.outputs.exists == 'true'
         working-directory: src/services/text-analysis
         run: |
           python -m pip install --upgrade pip
-          if [ -f pyproject.toml ]; then
-            pip install -e ".[dev]"
-          else
-            pip install -r requirements.txt
-            if [ -f requirements-dev.txt ]; then
-              pip install -r requirements-dev.txt
-            fi
-          fi
+          pip install -e ".[dev]"
 
       - name: Ruff
-        if: steps.detect.outputs.exists == 'true'
         working-directory: src/services/text-analysis
         run: ruff check .
 
-      - name: Pytest
-        if: steps.detect.outputs.exists == 'true'
+      - name: Pytest with coverage
         working-directory: src/services/text-analysis
-        run: pytest -q
+        run: pytest -q --cov=app --cov-report=term-missing --cov-report=xml:coverage/coverage.xml --cov-report=json:coverage/coverage.json --cov-report=html:coverage/html
 
-      - name: Skip Python job
-        if: steps.detect.outputs.exists != 'true'
-        run: echo "Python service not initialized yet, skipping."
+      - name: Upload text-analysis coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-text-analysis
+          path: src/services/text-analysis/coverage
+          if-no-files-found: ignore
+
+      - name: Append text-analysis coverage summary
+        if: always()
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          import xml.etree.ElementTree as ET
+
+          summary_path = 'src/services/text-analysis/coverage/coverage.xml'
+          if not os.path.exists(summary_path):
+              print('No text-analysis coverage summary found.')
+              raise SystemExit(0)
+
+          root = ET.parse(summary_path).getroot()
+          line_rate = float(root.attrib.get('line-rate', 0)) * 100
+          branch_rate = float(root.attrib.get('branch-rate', 0)) * 100
+          lines = [
+              '## Text-analysis coverage',
+              '',
+              '| Metric | Percent |',
+              '| --- | ---: |',
+              f'| Lines | {line_rate:.2f}% |',
+              f'| Branches | {branch_rate:.2f}% |',
+              ''
+          ]
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as handle:
+              handle.write('\n'.join(lines))
+          PY
+
+  tts_adapter:
+    name: Python | tts-adapter | lint + test + coverage
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        working-directory: src/services/tts-adapter
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Ruff
+        working-directory: src/services/tts-adapter
+        run: ruff check .
+
+      - name: Pytest with coverage
+        working-directory: src/services/tts-adapter
+        run: pytest -q --cov=app --cov-report=term-missing --cov-report=xml:coverage/coverage.xml --cov-report=json:coverage/coverage.json --cov-report=html:coverage/html
+
+      - name: Upload tts-adapter coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-tts-adapter
+          path: src/services/tts-adapter/coverage
+          if-no-files-found: ignore
+
+      - name: Append tts-adapter coverage summary
+        if: always()
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          import xml.etree.ElementTree as ET
+
+          summary_path = 'src/services/tts-adapter/coverage/coverage.xml'
+          if not os.path.exists(summary_path):
+              print('No tts-adapter coverage summary found.')
+              raise SystemExit(0)
+
+          root = ET.parse(summary_path).getroot()
+          line_rate = float(root.attrib.get('line-rate', 0)) * 100
+          branch_rate = float(root.attrib.get('branch-rate', 0)) * 100
+          lines = [
+              '## TTS adapter coverage',
+              '',
+              '| Metric | Percent |',
+              '| --- | ---: |',
+              f'| Lines | {line_rate:.2f}% |',
+              f'| Branches | {branch_rate:.2f}% |',
+              ''
+          ]
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as handle:
+              handle.write('\n'.join(lines))
+          PY

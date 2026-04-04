@@ -117,7 +117,19 @@ pnpm dev:gateway
 pnpm build
 pnpm test
 pnpm lint
+pnpm coverage
 ```
+
+Useful coverage commands:
+
+```bash
+pnpm coverage
+pnpm coverage:web
+pnpm coverage:gateway
+powershell -ExecutionPolicy Bypass -File scripts/coverage_check.ps1
+```
+
+CI now publishes coverage artifacts and appends a per-service coverage summary directly into the GitHub Actions job summary.
 
 ## Documentation index
 

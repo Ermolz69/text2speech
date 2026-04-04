@@ -1,7 +1,7 @@
 import type { FormEvent } from "react";
 
-import type { FormState, RequestState, SynthesisMode } from "../model/types";
-import { uiClass } from "../../../shared/ui/styles";
+import type { FormState, RequestState, SynthesisMode } from "@features/synthesis/model/types";
+import { uiClass } from "@shared/ui/styles";
 
 export interface VoiceOption {
   value: string;

@@ -1,5 +1,5 @@
-import type { SummaryState } from "../../../features/synthesis";
-import { uiClass } from "../../../shared/ui/styles";
+import type { SummaryState } from "@features/synthesis";
+import { uiClass } from "@shared/ui/styles";
 
 interface ResultPanelProps {
   requestState: "idle" | "loading" | "success" | "error";
