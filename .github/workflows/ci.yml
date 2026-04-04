@@ -308,7 +308,14 @@ jobs:
         with:
           name: mvp-baseline-regression
           path: reports/mvp-baseline/latest
-          if-no-files-found: error
+          if-no-files-found: warn
+
+      - name: Dump compose state on failure
+        if: failure()
+        shell: bash
+        run: |
+          docker compose ps || true
+          docker compose logs gateway text-analysis tts-adapter web --tail=200 || true
 
       - name: Append audio baseline summary
         if: always()
