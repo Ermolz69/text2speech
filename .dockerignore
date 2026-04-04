@@ -5,17 +5,21 @@
 .idea
 
 node_modules
+**/node_modules
+.pnpm-store
+**/.pnpm-store
+
 dist
+**/dist
 coverage
 **/coverage
 coverage.json
 coverage-*.json
 coverage-final.json
+
 .coverage
 .coverage.*
 htmlcov
-
-.pnpm-store
 
 .env
 .env.*
