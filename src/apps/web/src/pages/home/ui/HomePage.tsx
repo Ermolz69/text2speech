@@ -9,6 +9,7 @@ export function HomePage() {
   const {
     formState,
     requestState,
+    loadingStage,
     errorMessage,
     segments,
     summary,
@@ -47,6 +48,7 @@ export function HomePage() {
         <SynthesisForm
           formState={formState}
           requestState={requestState}
+          loadingStage={loadingStage}
           errorMessage={errorMessage}
           voiceOptions={voiceOptions}
           onSubmit={handleSubmit}
