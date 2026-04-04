@@ -3,4 +3,4 @@ WORKDIR /app
 COPY . .
 RUN corepack enable && pnpm install --frozen-lockfile
 RUN pnpm --filter shared build && pnpm --filter gateway build
-CMD ["pnpm", "--filter", "gateway", "dev"]
+CMD ["pnpm", "--filter", "gateway", "start"]
