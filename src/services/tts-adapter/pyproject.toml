@@ -12,6 +12,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "pytest",
+  "pytest-cov",
   "httpx",
   "black",
   "isort",
@@ -26,4 +27,3 @@ profile = "black"
 
 [tool.ruff]
 line-length = 100
-

@@ -135,11 +135,11 @@ export function mapSynthesizeResponse(
 }
 
 export function getTtsAdapterClientConfig(): TtsAdapterClientConfig {
-  const rawTimeout = Number(process.env.TTS_ADAPTER_TIMEOUT_MS ?? 3000);
+  const rawTimeout = Number(process.env.TTS_ADAPTER_TIMEOUT_MS ?? 15000);
 
   return {
     baseUrl: process.env.TTS_ADAPTER_URL ?? "http://tts-adapter:8002",
-    timeoutMs: Number.isFinite(rawTimeout) && rawTimeout > 0 ? rawTimeout : 3000,
+    timeoutMs: Number.isFinite(rawTimeout) && rawTimeout > 0 ? rawTimeout : 15000,
   };
 }
 

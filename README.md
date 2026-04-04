@@ -1,225 +1,149 @@
-[![CI](https://github.com/Ermolz69/text2speech/actions/workflows/ci.yml/badge.svg?style=for-the-badge)](https://github.com/Ermolz69/text2speech/actions/workflows/ci.yml)
-[![GitHub Repo stars](https://img.shields.io/github/stars/Ermolz69/text2speech)](https://github.com/Ermolz69/text2speech/stargazers)
-![GitHub last commit](https://img.shields.io/github/last-commit/Ermolz69/text2speech)
-![GitHub issues](https://img.shields.io/github/issues/Ermolz69/text2speech)
-![GitHub pull requests](https://img.shields.io/github/issues-pr/Ermolz69/text2speech)
-
 # Emotional TTS
 
-Local MVP for **emotion-aware text-to-speech** where expression is inferred from emoji, punctuation, and simple contextual text signals.
+Emotion-aware text-to-speech monorepo with a React web app, a Fastify gateway, a Python text-analysis service, and a Python TTS adapter.
 
-## Overview
+## Current status
 
-This repository contains a prototype pipeline that:
+The repository currently implements a working MVP pipeline with these characteristics:
 
-- accepts text with emoji and punctuation cues;
-- parses emotional signals from text;
-- builds structured emotional metadata;
-- synthesizes speech with **Piper**;
-- compares neutral and expressive outputs;
-- supports benchmarking against stronger references such as **ElevenLabs**.
+- the web app sends requests to the gateway only;
+- the gateway validates public payloads and orchestrates downstream services;
+- the text-analysis service normalizes text, splits it into segments, extracts cues, maps a small internal emotion set, and plans prosody;
+- the TTS adapter exposes a provider boundary and the default provider invokes Piper CLI to generate a real WAV file;
+- `/api/tts/debug` returns gateway-shaped analysis metadata without synthesis;
+- `/api/tts` runs the full gateway pipeline and returns `audioUrl` from the adapter.
 
-## Status
+## Read this first
 
-**Roadmap / MVP planning + implementation setup**
+For the exact supported startup flow, use:
 
-## Pipeline
+- `docs/startup_runbook_ua.md`
 
-```text
-text
-  -> normalizer
-  -> segmenter
-  -> emoji/context parser
-  -> emotion mapping
-  -> prosody planning
-  -> Piper TTS
-  -> post-processing
-  -> audio output + evaluation
-```
-
-## Core stack
-
-- Frontend: React + TypeScript
-- Gateway backend: TypeScript + Fastify
-- Text analysis service: Python (FastAPI)
-- TTS service: Piper (Python adapter + ffmpeg)
-- Docker / Docker Compose
-
-## Documentation
-
-- [Roadmap (EN)](./roadmap.md)
-- [Roadmap (RU)](./roadmap_RU.md)
-- [Roadmap (UA)](./roadmap_UA.md)
-
-## Planned structure
-
-```text
-project-root/
-  src/
-    apps/
-      web/
-      gateway/
-    services/
-      text-analysis/
-      tts-adapter/
-    shared/
-  docs/
-  benchmarks/
-  reports/
-  docker/
-  postman/
-  README.md
-```
-
-## MVP scope
-
-Included:
-
-- text input with emoji and punctuation;
-- rule-based parsing;
-- emotion mapping;
-- segment-level metadata;
-- local synthesis with Piper;
-- basic objective and subjective evaluation.
-
-Not included:
-
-- training a new TTS model from scratch;
-- full STT + TTS workflow;
-- production-scale deployment;
-- voice cloning as a primary goal.
+That file is the authoritative launch guide for the current repo state.
 
 ## Quick start
 
+### Docker
+
+1. Put your Piper voice model in `models/piper/model.onnx`
+2. Put the matching config in `models/piper/model.onnx.json`
+3. Run:
+
 ```bash
-git clone https://github.com/Ermolz69/text2speech.git
-cd text2speech
-docker compose up --build
+docker compose up -d --build
+powershell -ExecutionPolicy Bypass -File scripts/smoke_check.ps1 -RequireSynthesisReady
+powershell -ExecutionPolicy Bypass -File scripts/synthesis_integration_check.ps1
 ```
 
-Expected services:
+### Verified starting voices
 
-- web app;
-- gateway backend;
-- text-analysis service;
-- Piper TTS adapter service;
+- `en_US-lessac-medium`
+- `en_US-amy-medium`
 
-## Request Validation
+Official source list:
 
-Gateway validates incoming payloads before calling downstream services.
+- [Piper voice downloads](https://tderflinger.github.io/piper-docs/about/voices/download/)
+- [rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices)
 
-- `POST /api/analyze` requires `text` as a non-blank string and rejects unexpected fields.
-- `POST /api/tts` requires `text` and `voiceId` as non-blank strings.
-- `POST /api/tts` accepts only known top-level metadata fields: `format`, `emotion`, `intensity`.
-- `metadata.format` must be one of `wav`, `mp3`, or `ogg`.
+### Local
 
-Validation failures return the shared API error envelope with HTTP `422` and do not call `text-analysis` or `tts-adapter`.
+Use the detailed runbook if you want all services on the host machine instead.
 
-## Gateway upstream configuration
+## Runtime topology
 
-Gateway calls the text-analysis service through `TEXT_ANALYSIS_URL` and the TTS adapter through `TTS_ADAPTER_URL`. The current defaults in `docker-compose.yml` are `http://text-analysis:8001` and `http://tts-adapter:8002`.
+Default local ports from `docker-compose.yml`:
 
-Gateway normalizes upstream timeouts and failures from both services into its shared API error envelope. `/api/tts` runs the real pipeline: gateway analyzes the input text first, then forwards the generated segment metadata to `tts-adapter`. `TEXT_ANALYSIS_TIMEOUT_MS` and `TTS_ADAPTER_TIMEOUT_MS` control the outbound timeouts and both default to `3000` milliseconds.
+- web: `5173`
+- gateway: `4000`
+- text-analysis: `8001`
+- tts-adapter: `8002`
 
-## Text Analysis Internals
+## Public API summary
 
-`src/services/text-analysis/app/main.py` now stays focused on FastAPI wiring. The analysis pipeline lives in dedicated domain modules:
+### `GET /health`
 
-- `app/domain/normalizer.py`
-- `app/domain/segmenter.py`
-- `app/domain/signal_extractor.py`
-- `app/domain/mapper.py`
-- `app/domain/planner.py`
-- `app/domain/service.py`
+Gateway health endpoint.
 
-This keeps the analysis rules easier to test and extend without changing the HTTP layer. Focused Python tests for these modules live under `src/services/text-analysis/tests/`.
+### `POST /api/analyze`
 
-## Metadata Debug Endpoint
+Validates `{ "text": string }` and returns gateway-shaped segment metadata.
 
-`POST /api/tts/debug` exposes raw text-analysis metadata without running synthesis. This endpoint is intended for frontend debugging and QA inspection flows.
+### `POST /api/tts/debug`
 
-Example request:
+Runs the same analysis as `/api/analyze` and returns the same gateway-shaped metadata.
 
-```json
-{
-  "text": "Hello! :) How are you?"
-}
+### `POST /api/tts`
+
+Validates a synthesis request and runs the gateway pipeline.
+
+The resulting `audioUrl` now points to a real downloadable WAV when the Piper model is present.
+
+## Internal services
+
+### Text analysis service
+
+FastAPI service at `src/services/text-analysis`.
+
+Current internal pipeline:
+
+1. normalize whitespace and punctuation noise;
+2. split text into sentence-like segments;
+3. extract emoji and punctuation cues;
+4. map internal emotions (`neutral`, `happy`, `sad`);
+5. compute prosody hints per segment.
+
+### TTS adapter
+
+FastAPI service at `src/services/tts-adapter`.
+
+Current direct endpoint:
+
+- `POST /synthesize`
+- `GET /health`
+- `GET /health/ready`
+
+The endpoint delegates through a provider abstraction and the default Piper provider writes generated WAV files that are exposed under `/audio/<file>.wav`.
+
+## Local development
+
+Use `docs/startup_runbook_ua.md` for the exact startup sequence.
+
+Useful workspace commands:
+
+```bash
+pnpm install
+pnpm dev:web
+pnpm dev:gateway
+pnpm build
+pnpm test
+pnpm lint
+pnpm coverage
 ```
 
-Example response:
+Useful coverage commands:
 
-```json
-{
-  "segments": [
-    {
-      "text": "Hello! :)",
-      "emotion": "joy",
-      "intensity": 3,
-      "emoji": ["positive"],
-      "punctuation": ["exclamation"],
-      "pauseAfterMs": 250
-    },
-    {
-      "text": "How are you?",
-      "emotion": "neutral",
-      "intensity": 1,
-      "punctuation": ["question"],
-      "pauseAfterMs": 150
-    }
-  ]
-}
+```bash
+pnpm coverage
+pnpm coverage:web
+pnpm coverage:gateway
+powershell -ExecutionPolicy Bypass -File scripts/coverage_check.ps1
 ```
 
-Example valid `POST /api/tts` body:
+CI now publishes coverage artifacts and appends a per-service coverage summary directly into the GitHub Actions job summary.
 
-```json
-{
-  "text": "Hello! :) How are you?",
-  "voiceId": "voice-1",
-  "metadata": {
-    "format": "wav"
-  }
-}
-```
+## Documentation index
 
-## Common API error response
+Supporting documentation lives in `docs/`:
 
-Gateway and Python services now return the same top-level error JSON envelope for validation and runtime failures. The language-neutral source of truth lives in `src/shared/src/api-error.schema.json`.
+- `docs/startup_runbook_ua.md`
+- `docs/docs_index_ua.md`
+- `docs/backend_architecture_ua.md`
+- `docs/frontend_architecture_ua.md`
+- `docs/python_text_analysis_service_ua.md`
+- `docs/piper_integration_ua.md`
+- `docs/ffmpeg_pipeline_ua.md`
+- `docs/development_ua.md`
+- `docs/project_structure_ua.md`
+- `docs/initial_plan_ua.md`
 
-```json
-{
-  "error": {
-    "code": "validation_error",
-    "message": "Request validation failed",
-    "status": 422,
-    "path": "/api/analyze",
-    "details": [
-      {
-        "location": "body.text",
-        "message": "Field required",
-        "code": "missing"
-      }
-    ]
-  }
-}
-```
-
-Runtime failures use the same envelope with `code: "internal_error"` and omit `details` when there are no structured validation issues.
-
-## Benchmarking
-
-Planned comparison levels:
-
-1. Piper neutral vs Piper expressive pipeline
-2. Piper vs ElevenLabs
-3. Synthetic audio vs human reference audio
-
-## Notes
-
-- **Piper** is the main local synthesis engine.
-- **librosa** is used for evaluation, not generation.
-- **ElevenLabs** is used as a benchmark/reference, not as the base for the free local MVP.
-
-## License
-
-Add the project license here.
+Roadmap files remain separate and are intentionally not used as implementation truth.

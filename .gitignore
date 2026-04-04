@@ -1,6 +1,13 @@
 node_modules
 dist
 coverage/
+**/coverage/
+coverage.json
+coverage-*.json
+coverage-final.json
+.coverage
+.coverage.*
+htmlcov/
 
 .DS_Store
 

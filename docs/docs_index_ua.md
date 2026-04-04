@@ -1,38 +1,27 @@
-# Набір документації для проєкту Emotional TTS
+# Documentation Index
 
-## Призначення
-Цей пакет документів фіксує **поточну архітектуру та реалізований каркас MVP** проєкту **Emotional TTS**. Документи побудовані на основі `README.md` і `roadmap_UA.md` репозиторію та описують, **як уже організовано** front-end, gateway backend, Python-сервіс аналізу тексту, інтеграцію з Piper та ffmpeg-пайплайн.
+This directory describes the current implementation state, not backlog or roadmap ideas.
 
-## Порядок читання
-1. `initial_plan_ua.md` — що робити першим і в якій послідовності.
-2. `backend_architecture_ua.md` — як будується gateway backend.
-3. `frontend_architecture_ua.md` — як будується клієнтський застосунок.
-4. `python_text_analysis_service_ua.md` — як працює Python-сервіс аналізу тексту.
-5. `piper_integration_ua.md` — як інтегрується локальний синтезатор Piper.
-6. `ffmpeg_pipeline_ua.md` — як обробляється аудіо після синтезу.
+## Core documents
 
-## Базові принципи
-- MVP має бути **локальним**, **безкоштовним** і **Docker-friendly**.
-- Система повинна бути розділена на окремі рівні: **UI**, **gateway**, **аналіз тексту**, **синтез**, **post-processing**, **evaluation**.
-- Емоція в системі представляється **явними metadata**, а не неформальними прапорцями.
-- Piper є **поточним основним TTS-рушієм**, але архітектура має залишатися **provider-agnostic**.
-- `ffmpeg` не повинен керувати емоцією; його зона відповідальності — **технічна обробка аудіо**.
+- `startup_runbook_ua.md` - authoritative launch guide and exact supported startup modes
+- `backend_architecture_ua.md` - current server-side architecture and roles of gateway, text-analysis, and tts-adapter
+- `frontend_architecture_ua.md` - current web app structure and UI flow
+- `python_text_analysis_service_ua.md` - internal contract and pipeline of the text-analysis service
+- `piper_integration_ua.md` - provider boundary in tts-adapter and the current role of Piper
+- `ffmpeg_pipeline_ua.md` - what is currently implemented around ffmpeg and what is still not implemented
+- `development_ua.md` - workspace commands, tests, and links to the supported runbook
+- `project_structure_ua.md` - current monorepo structure
+- `initial_plan_ua.md` - short baseline snapshot instead of outdated startup assumptions
 
-## Рекомендована структура директорії docs
-```text
-docs/
-  docs_index_ua.md
-  initial_plan_ua.md
-  backend_architecture_ua.md
-  frontend_architecture_ua.md
-  python_text_analysis_service_ua.md
-  piper_integration_ua.md
-  ffmpeg_pipeline_ua.md
-```
+## Sources of truth
 
-## Результат цього пакета
-На основі цих документів команда або один розробник мають:
-- зрозумілу картину вже реалізованого стартового каркасу;
-- зафіксовані межі відповідальності між сервісами;
-- погоджений формат метаданих;
-- передбачуваний шлях від тексту до готового аудіо в поточному MVP.
+1. Code in `src/apps/*` and `src/services/*`
+2. `docker-compose.yml`
+3. `postman/EmotionTTS.postman_collection.json`
+4. the documents in this directory
+
+## What not to treat as current implementation truth
+
+- any roadmap files
+- historical backlog assumptions that are not confirmed by code

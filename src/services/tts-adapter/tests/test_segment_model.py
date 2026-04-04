@@ -1,11 +1,90 @@
+
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.models.segment import SegmentMetadata
+from app.providers.base import SynthesisResult
 
 client = TestClient(app, raise_server_exceptions=False)
 
 
+def test_health_reports_readiness_from_provider() -> None:
+    class ReadyProvider:
+        def get_readiness(self) -> dict[str, object]:
+            return {
+                "ready": True,
+                "binary_available": True,
+                "model_configured": True,
+                "model_exists": True,
+            }
+
+        def synthesize(self, segments: list[SegmentMetadata]) -> SynthesisResult:
+            return SynthesisResult(
+                audio_url="/stub.wav",
+                received_segments=len(segments),
+                total_pause_ms=0,
+            )
+
+    app.state.synthesis_provider = ReadyProvider()
+
+    try:
+        response = client.get("/health")
+        ready_response = client.get("/health/ready")
+    finally:
+        del app.state.synthesis_provider
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ok",
+        "service": "tts-adapter",
+        "readiness": {
+            "ready": True,
+            "binary_available": True,
+            "model_configured": True,
+            "model_exists": True,
+        },
+    }
+    assert ready_response.status_code == 200
+    assert ready_response.json()["ready"] is True
+
+
+def test_health_ready_returns_503_when_provider_is_not_ready() -> None:
+    class NotReadyProvider:
+        def get_readiness(self) -> dict[str, object]:
+            return {
+                "ready": False,
+                "binary_available": True,
+                "model_configured": True,
+                "model_exists": False,
+            }
+
+        def synthesize(self, segments: list[SegmentMetadata]) -> SynthesisResult:
+            raise AssertionError('synthesize should not be called')
+
+    app.state.synthesis_provider = NotReadyProvider()
+
+    try:
+        response = client.get('/health')
+        ready_response = client.get('/health/ready')
+    finally:
+        del app.state.synthesis_provider
+
+    assert response.status_code == 200
+    assert response.json()['status'] == 'degraded'
+    assert ready_response.status_code == 503
+    assert ready_response.json()['ready'] is False
+
+
 def test_synthesize_accepts_segment_structure() -> None:
+    class StubProvider:
+        def synthesize(self, segments: list[SegmentMetadata]) -> SynthesisResult:
+            return SynthesisResult(
+                audio_url="/stub.wav",
+                received_segments=len(segments),
+                total_pause_ms=sum(segment.pause_ms for segment in segments),
+            )
+
+    app.state.synthesis_provider = StubProvider()
     payload = {
         "segments": [
             {
@@ -20,12 +99,62 @@ def test_synthesize_accepts_segment_structure() -> None:
         ]
     }
 
-    response = client.post("/synthesize", json=payload)
+    try:
+        response = client.post("/synthesize", json=payload)
+    finally:
+        del app.state.synthesis_provider
 
     assert response.status_code == 200
     body = response.json()
-    assert body["received_segments"] == 1
-    assert body["total_pause_ms"] == 250
+    assert body == {
+        "audio_url": "/stub.wav",
+        "received_segments": 1,
+        "total_pause_ms": 250,
+    }
+
+
+def test_synthesize_delegates_to_configured_provider() -> None:
+    class StubProvider:
+        def __init__(self) -> None:
+            self.calls: list[list[SegmentMetadata]] = []
+
+        def synthesize(self, segments: list[SegmentMetadata]) -> SynthesisResult:
+            self.calls.append(segments)
+            return SynthesisResult(
+                audio_url="/stub.wav",
+                received_segments=len(segments),
+                total_pause_ms=999,
+            )
+
+    provider = StubProvider()
+    app.state.synthesis_provider = provider
+    payload = {
+        "segments": [
+            {
+                "text": "Hello",
+                "emotion": "neutral",
+                "intensity": 0.0,
+                "pause_ms": 10,
+                "rate": 1.0,
+                "pitch_hint": 0.0,
+                "cues": [],
+            }
+        ]
+    }
+
+    try:
+        response = client.post("/synthesize", json=payload)
+    finally:
+        del app.state.synthesis_provider
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "audio_url": "/stub.wav",
+        "received_segments": 1,
+        "total_pause_ms": 999,
+    }
+    assert len(provider.calls) == 1
+    assert provider.calls[0][0].text == "Hello"
 
 
 def test_synthesize_validation_errors_use_shared_envelope() -> None:

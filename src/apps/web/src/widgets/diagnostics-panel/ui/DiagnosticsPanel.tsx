@@ -1,5 +1,6 @@
 import type { AnalyzeSegmentDto } from "shared";
-import { uiClass } from "../../../shared/ui/styles";
+
+import { uiClass } from "@shared/ui/styles";
 
 interface DiagnosticsPanelProps {
   showDiagnostics: boolean;

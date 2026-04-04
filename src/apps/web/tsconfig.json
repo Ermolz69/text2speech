@@ -4,7 +4,15 @@
     "ignoreDeprecations": "5.0",
     "baseUrl": "./src",
     "rootDir": "./src",
-    "outDir": "dist"
+    "outDir": "dist",
+    "paths": {
+      "@/*": ["*"],
+      "@app/*": ["app/*"],
+      "@pages/*": ["pages/*"],
+      "@widgets/*": ["widgets/*"],
+      "@features/*": ["features/*"],
+      "@shared/*": ["shared/*"]
+    }
   },
   "include": ["src"]
 }

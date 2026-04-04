@@ -1,152 +1,79 @@
-# Як повинен працювати Piper у проєкті Emotional TTS
+# Piper Integration
 
-## 1. Роль Piper у системі
-Piper — це **локальний рушій синтезу мовлення**. У цьому проєкті він не приймає рішення про емоцію. Його задача — **перетворити підготовлений текст або сегменти тексту на аудіо**.
+## Current state
 
-Отже, Piper у системі виконує роль:
-- synthesis engine;
-- локального provider-а;
-- змінного нижнього шару, який можна пізніше замінити.
+Piper is no longer hardcoded into the `/synthesize` endpoint logic.
 
-## 2. Що важливо зафіксувати одразу
-- Piper є **основним локальним TTS-рушієм для MVP**.
-- Архітектура не повинна залежати від нього настільки, щоб заміна provider-а вимагала переписування front-end або parser-а.
-- Piper працює після того, як Python-сервіс уже побудував metadata і synthesis hints.
+The `tts-adapter` service now has:
 
-## 3. Місце Piper у pipeline
+- `SynthesisProvider` as the provider boundary
+- `SynthesisResult` as the provider result model
+- `PiperSynthesisProvider` as the default runtime implementation
+- `get_synthesis_provider()` in the FastAPI app layer
 
-```text
-user text
-  -> text analysis (Python service)
-  -> emotional metadata
-  -> synthesis hints
-  -> TTS adapter service (Python, src/services/tts-adapter)
-      -> Piper (CLI)
-  -> raw wav segments
-```
+This keeps the boundary explicit between:
 
-## 4. Правильний спосіб інтеграції
-У поточному каркасі Piper підключено **через окремий adapter-сервіс** у `src/services/tts-adapter`, а не викликається хаотично з різних місць коду.
+- HTTP endpoint handling
+- provider selection
+- provider-specific synthesis logic
 
-### Інтерфейс adapter layer
-Архітектурно збережено provider-агностичний підхід: зовнішні сервіси (gateway, evaluation) бачать не конкретний CLI-виклик Piper, а HTTP-API TTS adapter-сервісу з єдиним `synthesize`-контрактом. Усередині цього сервісу реалізовано інтеграцію з Piper через CLI, яку пізніше можна замінити іншим провайдером.
+## Runtime behavior
 
-## 5. Як саме працює виклик у поточному каркасі
-Для MVP таргетується така поведінка:
-1. gateway отримує список сегментів;
-2. для кожного сегмента формується окремий виклик `PiperProvider`;
-3. результат кожного виклику — окремий WAV;
-4. далі сегменти передаються на рівень ffmpeg/post-processing.
+`PiperSynthesisProvider` invokes the external Piper CLI with:
 
-## 6. Чому синтез краще робити по сегментах
-Сегментний синтез дає можливість:
-- керувати паузами між частинами тексту;
-- обробляти зміну емоції всередині одного повідомлення;
-- легше робити fallback для проблемного сегмента;
-- зберігати технічну прозорість pipeline.
+- `PIPER_BIN`
+- `PIPER_MODEL_PATH`
+- a generated output WAV path inside the adapter audio directory
 
-## 7. Що повинен отримувати Piper
-В реальному виклику Piper має отримувати лише те, що йому потрібно для синтезу:
-- текст сегмента;
-- голос;
-- шлях до вихідного WAV;
-- за потреби — спрощені hints, які вже інтерпретовані adapter-рівнем.
+The provider writes a real `.wav` file and returns:
 
-Piper не повинен отримувати весь складний об'єкт parser metadata без потреби.
+- `audio_url`
+- `received_segments`
+- `total_pause_ms`
 
-## 8. Структура TTS-рівня в monorepo
-```text
-src/
-  services/
-    tts-adapter/
-      app/
-        main.py              # FastAPI entrypoint
-      domain/                # моделі запиту/результату
-      providers/             # обгортки над Piper CLI
-      postprocessing/        # виклики ffmpeg та склеювання
-      config/                # налаштування голосів/шляхів
-      tests/
-        test_health.py       # smoke-тест
-```
+Generated files are exposed by `tts-adapter` under `/audio/<file>.wav`.
 
-## 9. Варіанти інтеграції
-У Piper є кілька форм інтеграції, але для MVP варто зафіксувати **один** варіант.
+## Current Docker behavior
 
-### Варіант A. Виклик CLI
-Плюси:
-- просто;
-- прозоро для дебагу;
-- легко запускати в Docker.
+The `tts-adapter` Docker image now installs the Piper CLI through `piper-tts`.
+That means the container already includes a working `piper` command.
 
-Мінуси:
-- більше роботи з процесами й файловими шляхами.
+For real synthesis in Docker, you still need to provide the voice model files.
+The default compose setup mounts:
 
-### Варіант B. Окремий TTS service wrapper
-Плюси:
-- чистіший контракт;
-- простіше масштабувати;
-- менша зв'язаність gateway з CLI-командами.
+- `./models/piper` -> `/models/piper`
 
-Мінуси:
-- трохи більше стартового коду.
+and expects:
 
-### Рішення для цього проєкту
-Для MVP обрано:
-- **внутрішню CLI-інтеграцію** Piper у межах Python-сервісу `tts-adapter`,
-- приховування деталей CLI за єдиним HTTP-ендпоїнтом `POST /synthesize`,
-- щоб ззовні система бачила лише узгоджений `synthesize()`-контракт.
+- `/models/piper/model.onnx`
 
-## 10. Що повинен робити adapter над Piper
-Adapter layer повинен:
-- перетворювати загальний TTS-запит у конкретний виклик Piper;
-- вибирати voice model;
-- генерувати назви тимчасових файлів;
-- перехоплювати stderr/stdout;
-- обробляти помилки;
-- повертати стандартизований результат.
+If your voice requires a companion config file, keep it in the same mounted directory.
 
-## 11. Що не повинен робити Piper layer
-- не повинен визначати emotion labels;
-- не повинен сегментувати текст;
-- не повинен вирішувати, коли ставити довгі чи короткі паузи;
-- не повинен конвертувати фінальний файл у MP3;
-- не повинен напряму віддавати HTTP-відповідь.
+## Current runtime constraint
 
-## 12. Обробка помилок
-Типові категорії:
-- відсутній voice model;
-- недоступний бінарник Piper;
-- невірний output path;
-- порожній сегмент;
-- збій процесу синтезу.
+The provider still calls Piper as a local process through `subprocess.run(...)`.
+That means Piper must exist in the same runtime environment as `tts-adapter`.
 
-Поведінка:
-- помилка логуються з `requestId` і `segmentId`;
-- проблемний сегмент не знищує всю діагностику;
-- gateway отримує нормалізований код помилки.
+Supported shapes today:
 
-## 13. Правила з файлами
-Для кожного запиту:
-```text
-outputs/generated/{requestId}/
-  metadata.json
-  segments/
-    001.wav
-    002.wav
-  final.wav
-  final.mp3
-```
+- `tts-adapter` local + Piper local
+- `tts-adapter` in Docker + Piper bundled in that same container
 
-## 14. Голоси і конфігурація
-На MVP треба зафіксувати:
-- 1 мову;
-- 1 або 2 голоси максимум;
-- стабільні шляхи до моделей;
-- версію voice assets.
+Not supported by the current provider:
 
-## 15. Критерії готовності інтеграції Piper
-Piper-інтеграція готова, якщо:
-- синтезує окремий сегмент у WAV;
-- стабільно працює в Docker;
-- підтримує voiceId через adapter;
-- повертає передбачуваний результат і передбачувані помилки.
+- `tts-adapter` local + Piper in a separate container as a remote service
+
+That would require a different provider implementation that talks over the network instead of calling a local CLI binary.
+
+## Runtime configuration
+
+Main adapter environment variables:
+
+- `PIPER_BIN`
+- `PIPER_MODEL_PATH`
+- `FFMPEG_BIN`
+- `TTS_OUTPUT_DIR` for local or custom output placement
+
+## Provider guidance
+
+If we add another synthesis provider later, it should live in `app/providers/` behind the same provider boundary instead of adding conditional logic directly inside the `/synthesize` route handler.

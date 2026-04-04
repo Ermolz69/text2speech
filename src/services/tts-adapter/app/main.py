@@ -5,10 +5,18 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.models.segment import SynthesizeRequest
+from app.providers import PiperSynthesisProvider, SynthesisProvider
+from app.providers.piper import DEFAULT_AUDIO_ROUTE, resolve_audio_output_dir
 
 app = FastAPI(title="TTS Adapter Service")
+app.mount(
+    DEFAULT_AUDIO_ROUTE,
+    StaticFiles(directory=resolve_audio_output_dir(), check_dir=False),
+    name="generated-audio",
+)
 
 
 def create_api_error_response(
@@ -81,9 +89,53 @@ async def handle_runtime_error(
     )
 
 
+def get_synthesis_provider(request: Request) -> SynthesisProvider:
+    provider = getattr(request.app.state, "synthesis_provider", None)
+    if provider is None:
+        provider = PiperSynthesisProvider()
+        request.app.state.synthesis_provider = provider
+    return provider
+
+
+def get_provider_readiness(provider: SynthesisProvider) -> dict[str, Any] | None:
+    readiness_getter = getattr(provider, "get_readiness", None)
+    if callable(readiness_getter):
+        readiness = readiness_getter()
+        if isinstance(readiness, dict):
+            return readiness
+    return None
+
+
 @app.get("/health")
-def health() -> dict:
-    return {"status": "ok", "service": "tts-adapter"}
+def health(request: Request) -> dict[str, Any]:
+    provider = get_synthesis_provider(request)
+    readiness = get_provider_readiness(provider)
+    ready = readiness.get("ready") if readiness else None
+
+    payload: dict[str, Any] = {
+        "status": "ok" if ready is not False else "degraded",
+        "service": "tts-adapter",
+    }
+    if readiness is not None:
+        payload["readiness"] = readiness
+    return payload
+
+
+@app.get("/health/ready")
+def health_ready(request: Request) -> JSONResponse:
+    provider = get_synthesis_provider(request)
+    readiness = get_provider_readiness(provider)
+    ready = bool(readiness and readiness.get("ready"))
+
+    return JSONResponse(
+        status_code=200 if ready else 503,
+        content={
+            "status": "ok" if ready else "degraded",
+            "service": "tts-adapter",
+            "ready": ready,
+            "readiness": readiness or {"ready": False},
+        },
+    )
 
 
 @app.post("/synthesize")
@@ -91,10 +143,10 @@ def synthesize(payload: SynthesizeRequest, request: Request) -> dict:
     if request.headers.get("x-force-error") == "1":
         raise RuntimeError("Forced test runtime error")
 
-    total_pause_ms = sum(segment.pause_ms for segment in payload.segments)
+    result = get_synthesis_provider(request).synthesize(payload.segments)
 
     return {
-        "audio_url": "/placeholder.wav",
-        "received_segments": len(payload.segments),
-        "total_pause_ms": total_pause_ms,
+        "audio_url": result.audio_url,
+        "received_segments": result.received_segments,
+        "total_pause_ms": result.total_pause_ms,
     }

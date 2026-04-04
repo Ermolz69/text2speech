@@ -1,134 +1,28 @@
-import { useMemo, useState } from "react";
-import type { FormEvent } from "react";
-import type { AnalyzeSegmentDto, EmotionIntensity, EmotionLabel } from "shared";
+import { SynthesisForm } from "@features/synthesis";
+import { uiClass } from "@shared/ui/styles";
+import { DiagnosticsPanel } from "@widgets/diagnostics-panel";
+import { ResultPanel } from "@widgets/synthesis-result";
 
-import {
-  SynthesisForm,
-  type VoiceOption,
-  type FormState,
-  type RequestState,
-  type SummaryState,
-} from "../../../features/synthesis";
-import { analyzeText, synthesizeText } from "../../../shared/api";
-import { uiClass } from "../../../shared/ui/styles";
-import { ResultPanel } from "../../../widgets/synthesis-result";
-import { DiagnosticsPanel } from "../../../widgets/diagnostics-panel";
-
-const DEFAULT_TEXT = "Hi 😊 Today feels like a great day!!!";
-
-const voiceOptions: VoiceOption[] = [
-  { value: "voice-1", label: "Voice 1" },
-  { value: "voice-2", label: "Voice 2" },
-];
-
-function inferSummaryEmotion(segments: AnalyzeSegmentDto[]): EmotionLabel {
-  if (segments.length === 0) {
-    return "neutral";
-  }
-
-  const scoreByEmotion = new Map<EmotionLabel, number>();
-
-  for (const segment of segments) {
-    const currentScore = scoreByEmotion.get(segment.emotion) ?? 0;
-    scoreByEmotion.set(segment.emotion, currentScore + 1 + segment.intensity * 0.25);
-  }
-
-  let bestEmotion: EmotionLabel = "neutral";
-  let bestScore = -1;
-
-  for (const [emotion, score] of scoreByEmotion.entries()) {
-    if (score > bestScore) {
-      bestEmotion = emotion;
-      bestScore = score;
-    }
-  }
-
-  return bestEmotion;
-}
-
-function inferSummaryIntensity(segments: AnalyzeSegmentDto[]): EmotionIntensity {
-  if (segments.length === 0) {
-    return 0;
-  }
-
-  const avgIntensity =
-    segments.reduce((sum, segment) => sum + segment.intensity, 0) / segments.length;
-
-  if (avgIntensity < 0.5) return 0;
-  if (avgIntensity < 1.5) return 1;
-  if (avgIntensity < 2.5) return 2;
-
-  return 3;
-}
+import { useHomePage } from "@pages/home/model";
 
 export function HomePage() {
-  const [formState, setFormState] = useState<FormState>({
-    text: DEFAULT_TEXT,
-    voiceId: voiceOptions[0].value,
-    mode: "expressive",
-    outputFormat: "mp3",
-  });
-  const [requestState, setRequestState] = useState<RequestState>("idle");
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [segments, setSegments] = useState<AnalyzeSegmentDto[]>([]);
-  const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  const [generationMs, setGenerationMs] = useState<number | null>(null);
-  const [showDiagnostics, setShowDiagnostics] = useState(true);
-
-  const summary = useMemo<SummaryState>(() => {
-    if (segments.length === 0) {
-      return { emotion: "neutral", intensity: 0 };
-    }
-
-    return {
-      emotion: inferSummaryEmotion(segments),
-      intensity: inferSummaryIntensity(segments),
-    };
-  }, [segments]);
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault();
-
-    if (formState.text.trim().length === 0) {
-      setRequestState("error");
-      setErrorMessage("Enter text to synthesize.");
-      return;
-    }
-
-    setRequestState("loading");
-    setErrorMessage(null);
-    setAudioUrl(null);
-    setGenerationMs(null);
-
-    const startedAt = performance.now();
-
-    try {
-      const analysis = await analyzeText({ text: formState.text });
-      setSegments(analysis.segments);
-
-      const synthesis = await synthesizeText({
-        text: formState.text,
-        voiceId: formState.voiceId,
-        metadata: {
-          format: formState.outputFormat,
-          ...(formState.mode === "neutral"
-            ? { emotion: "neutral" as const, intensity: 0 as const }
-            : {}),
-        },
-      });
-
-      setAudioUrl(synthesis.audioUrl);
-      setGenerationMs(Math.round(performance.now() - startedAt));
-      setRequestState("success");
-    } catch (error) {
-      setRequestState("error");
-      setErrorMessage(
-        error instanceof Error && error.message
-          ? error.message
-          : "Synthesis failed. Please try again."
-      );
-    }
-  }
+  const {
+    formState,
+    requestState,
+    errorMessage,
+    segments,
+    summary,
+    audioUrl,
+    generationMs,
+    showDiagnostics,
+    voiceOptions,
+    handleSubmit,
+    handleTextChange,
+    handleVoiceChange,
+    handleModeChange,
+    handleFormatChange,
+    toggleDiagnostics,
+  } = useHomePage();
 
   return (
     <main className="relative mx-auto min-h-screen w-full max-w-6xl px-4 pb-10 pt-6">
@@ -156,10 +50,10 @@ export function HomePage() {
           errorMessage={errorMessage}
           voiceOptions={voiceOptions}
           onSubmit={handleSubmit}
-          onTextChange={(text) => setFormState((prev) => ({ ...prev, text }))}
-          onVoiceChange={(voiceId) => setFormState((prev) => ({ ...prev, voiceId }))}
-          onModeChange={(mode) => setFormState((prev) => ({ ...prev, mode }))}
-          onFormatChange={(outputFormat) => setFormState((prev) => ({ ...prev, outputFormat }))}
+          onTextChange={handleTextChange}
+          onVoiceChange={handleVoiceChange}
+          onModeChange={handleModeChange}
+          onFormatChange={handleFormatChange}
         />
 
         <ResultPanel
@@ -175,7 +69,7 @@ export function HomePage() {
         <DiagnosticsPanel
           showDiagnostics={showDiagnostics}
           segments={segments}
-          onToggle={() => setShowDiagnostics((prev) => !prev)}
+          onToggle={toggleDiagnostics}
         />
       </section>
     </main>

@@ -1,212 +1,116 @@
-# Архітектура backend для Emotional TTS
+# Backend Architecture
 
-## 1. Призначення backend-рівня
-Backend не повинен містити всю бізнес-логіку в одному місці. Його задача — бути **оркестратором** між:
-- front-end застосунком;
-- Python-сервісом аналізу тексту;
-- TTS-рівнем на базі Piper;
-- аудіоутилітами на базі ffmpeg;
-- системою збереження результатів.
+## Поточна схема
 
-## 2. Роль backend у поточному каркасі
-Backend реалізовано як **gateway service** на **TypeScript + Fastify** у директорії `src/apps/gateway`.
+Система складається з трьох backend-компонентів:
 
-Його зона відповідальності:
-- приймати зовнішні HTTP-запити;
-- валідовувати вхідні дані;
-- ініціювати pipeline синтезу;
-- обробляти збої сервісів;
-- зберігати статус задачі;
-- віддавати клієнту результат у стабільному форматі.
+- `gateway` (`src/apps/gateway`) — єдиний публічний HTTP entrypoint для web-клієнта
+- `text-analysis` (`src/services/text-analysis`) — FastAPI сервіс сегментації, cue extraction, emotion mapping і prosody planning
+- `tts-adapter` (`src/services/tts-adapter`) — FastAPI сервіс синтезу з provider boundary
 
-## 3. Чому саме gateway
-Gateway потрібен, щоб:
-- ізолювати front-end від внутрішніх сервісів;
-- не давати UI прямий доступ до Python-логіки;
-- не викликати Piper напряму з браузера;
-- мати одну публічну точку входу;
-- спростити майбутню заміну окремих модулів.
-
-## 4. Сервіси всередині backend-контуру
+Поточний запитний ланцюжок:
 
 ```text
-Frontend
-  -> Gateway API
-      -> Text Analysis Service (Python)
-      -> TTS Adapter (Python FastAPI)
-          -> Piper (CLI)
-      -> ffmpeg (post-processing всередині TTS adapter)
-      -> Storage / Output Registry
+web -> gateway -> text-analysis -> gateway -> tts-adapter
 ```
 
-## 5. Основні модулі gateway
+## Відповідальність gateway
 
-### 5.1 API layer
-Відповідає за:
-- маршрути;
-- DTO;
-- схеми валідації;
-- формування HTTP-відповідей.
+Gateway:
 
-### 5.2 Orchestration layer
-Відповідає за:
-- запуск етапів pipeline у правильному порядку;
-- передавання даних між етапами;
-- фіксацію стану обробки;
-- rollback або cleanup тимчасових файлів у разі збою.
+- приймає публічні запити `/api/analyze`, `/api/tts/debug`, `/api/tts`
+- валідовує вхідні payload-и через Fastify schema
+- нормалізує upstream timeout/error responses у спільний error envelope
+- мапить внутрішній Python response у public DTO для web
+- запускає synthesis pipeline для `/api/tts`
 
-### 5.3 Integration layer
-Відповідає за клієнти:
-- `textAnalysisClient`
-- `ttsClient`
-- `audioUtilsClient`
-- `storageClient`
+Поточні публічні endpoint-и gateway:
 
-### 5.4 Domain layer
-Відповідає за:
-- типи сутностей;
-- статуси задач;
-- конфігурацію режимів синтезу;
-- правила fallback-поведінки.
+- `GET /health`
+- `POST /api/analyze`
+- `POST /api/tts/debug`
+- `POST /api/tts`
 
-## 6. Рекомендований життєвий цикл запиту
+## Відповідальність text-analysis
 
-```mermaid
-flowchart TD
-    A[POST /api/v1/synthesis] --> B[Валідація запиту]
-    B --> C[Створення request_id]
-    C --> D[Виклик Python text-analysis service]
-    D --> E[Отримання emotional metadata]
-    E --> F[Передача сегментів до TTS adapter]
-    F --> G[Генерація WAV сегментів]
-    G --> H[ffmpeg post-processing]
-    H --> I[Збереження фінального файлу]
-    I --> J[Формування API-відповіді]
-```
+Text-analysis зараз:
 
-## 7. Режими роботи
+- приймає `POST /analyze`
+- нормалізує текст
+- ділить текст на сегменти
+- витягує cue-сигнали (`emoji:*`, `punctuation:*`)
+- мапить внутрішню емоцію (`neutral`, `happy`, `sad`)
+- рахує `pause_ms`, `rate`, `pitch_hint`
 
-### Синхронний режим для MVP
-Підходить, якщо синтез короткий:
-- клієнт надсилає текст;
-- backend обробляє все в одному запиті;
-- клієнт одразу отримує результат.
+Внутрішній response сервісу — segment list зі snake_case полями:
 
-### Асинхронний режим для наступного етапу
-Потрібен, якщо:
-- текст довгий;
-- синтез триває довше;
-- потрібен прогрес-статус.
+- `text`
+- `emotion`
+- `intensity`
+- `pause_ms`
+- `rate`
+- `pitch_hint`
+- `cues`
 
-Тоді додаються:
-- `POST /jobs`
-- `GET /jobs/:id`
-- `GET /jobs/:id/result`
+## Відповідальність tts-adapter
 
-Для MVP достатньо спроєктувати backend так, щоб асинхронний режим можна було додати без переписування доменної логіки.
+TTS adapter зараз:
 
-## 8. Рекомендовані API-ендпоїнти
+- приймає `POST /synthesize`
+- валідує сегменти synthesis payload-а
+- делегує синтез через provider interface
+- за замовчуванням використовує `PiperSynthesisProvider`
+- повертає placeholder synthesis result
 
-### POST `/api/v1/synthesis`
-Призначення: запуск повного циклу синтезу.
+Поточний direct response сервісу:
 
-Приклад запиту:
-```json
-{
-  "text": "Привіт 😊! Я дуже радий тебе чути!",
-  "voiceId": "uk-voice-01",
-  "mode": "expressive",
-  "outputFormat": "mp3"
-}
-```
+- `audio_url`
+- `received_segments`
+- `total_pause_ms`
 
-Приклад відповіді:
-```json
-{
-  "requestId": "req_001",
-  "status": "completed",
-  "audio": {
-    "path": "/outputs/generated/req_001/final.mp3",
-    "format": "mp3",
-    "durationMs": 4210
-  },
-  "metadataPath": "/outputs/generated/req_001/metadata.json"
-}
-```
+## Public vs internal contracts
 
-### POST `/api/v1/analyze`
-Призначення: окремо перевірити text-analysis без синтезу.
+Є два рівні контракту:
 
-### GET `/api/v1/health`
-Призначення: перевірка стану gateway.
+### Публічний gateway-контракт
 
-### GET `/api/v1/dependencies`
-Призначення: перевірка доступності Python service, Piper та ffmpeg.
+Використовується web та Postman для `gateway`.
 
-## 9. Правила валідації
-Gateway повинен перевіряти:
-- що `text` не порожній;
-- що `voiceId` входить до дозволеного набору;
-- що `mode` має значення `neutral` або `expressive`;
-- що `outputFormat` входить до дозволених форматів;
-- що довжина тексту не перевищує ліміт MVP.
+Поточні label-и емоцій у public DTO:
 
-## 10. Правила помилок
-Backend має повертати передбачувані помилки:
-- `400` — невалідний запит;
-- `422` — текст прийнятий, але аналіз не може побудувати коректні metadata;
-- `502` — недоступний внутрішній сервіс;
-- `500` — внутрішня помилка pipeline.
+- `neutral`
+- `joy`
+- `playful`
+- `sadness`
+- `anger`
+- `fear`
+- `surprise`
 
-Відповідь на помилку:
-```json
-{
-  "requestId": "req_001",
-  "status": "failed",
-  "error": {
-    "code": "TTS_PROVIDER_UNAVAILABLE",
-    "message": "Сервіс синтезу тимчасово недоступний"
-  }
-}
-```
+### Внутрішній Python-контракт
 
-## 11. Структура backend-проєкту (фактична для monorepo)
-```text
-src/
-  apps/
-    gateway/
-      src/
-        app.ts              # точка входу Fastify
-        routes/             # HTTP-маршрути (health, tts тощо)
-        controllers/        # тонкі контролери над services
-        services/
-          tts-orchestrator.service.ts   # координація викликів text-analysis та tts-adapter
-        clients/
-          text-analysis.client.ts       # HTTP-клієнт до Python text-analysis
-          tts-adapter.client.ts         # HTTP-клієнт до TTS adapter
-        schemas/            # DTO/validation схеми
-        domain/             # типи, статуси задач, конфіг
-        utils/
-      test/
-```
+Використовується між gateway та Python сервісами.
 
-## 12. Що не повинен робити backend
-- не повинен містити правила emoji-to-emotion усередині route handlers;
-- не повинен зберігати бізнес-логіку у фронтенді;
-- не повинен напряму підлаштовувати текст під конкретний один голос Piper без adapter layer;
-- не повинен змішувати логіку збереження файлів і HTTP-контролери.
+Поточні label-и text-analysis:
 
-## 13. Рекомендовані технічні правила
-- усі DTO мають бути типізованими;
-- маршрути мають мати JSON Schema або еквівалентну строгість;
-- інтеграційні клієнти повинні бути ізольованими від контролерів;
-- усі тимчасові файли мають створюватися в окремому каталозі запиту;
-- логування повинно містити `requestId` на кожному етапі.
+- `neutral`
+- `happy`
+- `sad`
 
-## 14. Мінімальний результат для MVP
-Backend вважається реалізованим у поточному каркасі, якщо він:
-- приймає текст;
-- викликає Python-сервіс аналізу (коли він підключений);
-- викликає TTS adapter для синтезу;
-- делегує ffmpeg post-processing на рівень adapter-а;
-- повертає готовий аудіорезультат і шлях до metadata.
+Gateway має adapter-layer, який мапить внутрішні Python labels у public DTO labels.
+
+## Error handling
+
+Усі три backend-шари використовують сумісний envelope для validation/runtime помилок.
+
+Типові коди:
+
+- `validation_error`
+- `internal_error`
+- `upstream_timeout`
+- `upstream_error`
+
+## Поточні обмеження
+
+- `tts-adapter` ще не виконує реальний Piper synthesis end-to-end і повертає placeholder audio URL
+- ffmpeg та Piper env vars вже закладені в runtime-конфігурацію, але фактичний synthesis pipeline ще мінімальний
+- public shared DTO історично ширший за поточний внутрішній emotion set text-analysis
