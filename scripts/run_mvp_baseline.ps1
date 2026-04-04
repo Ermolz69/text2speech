@@ -46,11 +46,11 @@ foreach ($prompt in $prompts) {
   $analyzeResponse = Invoke-JsonPost "$WebUrl/api/analyze" @{ text = $promptText }
   Assert-AnalyzeResponse -Payload $analyzeResponse
 
-  $ttsResponse = Invoke-JsonPost "$WebUrl/api/tts" @{
+  $ttsResponse = Invoke-WithRetry -OperationName "tts request for prompt $promptId" -Action { Invoke-JsonPost "$WebUrl/api/tts" @{
     text = $promptText
     voiceId = $voiceId
     metadata = @{ format = 'wav' }
-  }
+  } }
   Assert-SynthesisResponse -Payload $ttsResponse
 
   $analyzePath = Join-Path $jsonDir "$promptId.analyze.json"
@@ -59,7 +59,7 @@ foreach ($prompt in $prompts) {
 
   $analyzeResponse | ConvertTo-Json -Depth 12 | Set-Content $analyzePath
   $ttsResponse | ConvertTo-Json -Depth 12 | Set-Content $ttsPath
-  Invoke-WebRequest -UseBasicParsing -Uri "$WebUrl$($ttsResponse.audioUrl)" -OutFile $audioPath | Out-Null
+  Invoke-WithRetry -OperationName "audio download for prompt $promptId" -Action { Invoke-AudioDownload -Uri "$WebUrl$($ttsResponse.audioUrl)" -OutputPath $audioPath | Out-Null }
 
   $file = Get-Item $audioPath
   if ($file.Length -le 0) {
@@ -221,3 +221,4 @@ Write-Host 'MVP baseline regression summary:'
   ReportPath = $reportPath
   OutputDir = $OutputDir
 } | Format-List
+

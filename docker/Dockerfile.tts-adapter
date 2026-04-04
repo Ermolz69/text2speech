@@ -4,6 +4,6 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 COPY src/services/tts-adapter/pyproject.toml .
-RUN pip install --no-cache-dir . piper-tts
+RUN pip install --no-cache-dir . piper-tts==1.4.2
 COPY src/services/tts-adapter/app ./app
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8002"]

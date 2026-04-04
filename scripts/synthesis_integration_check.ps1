@@ -14,16 +14,16 @@ if ($parent) {
 }
 
 Write-Host 'Requesting /api/tts through web...'
-$response = Invoke-JsonPost "$WebUrl/api/tts" @{
+$response = Invoke-WithRetry -OperationName "synthesis request" -Action { Invoke-JsonPost "$WebUrl/api/tts" @{
   text = $Text
   voiceId = $VoiceId
   metadata = @{ format = 'wav' }
-}
+} }
 Assert-SynthesisResponse -Payload $response
 
 $audioUri = "$WebUrl$($response.audioUrl)"
 Write-Host "Downloading generated audio from $audioUri ..."
-$download = Invoke-WebRequest -UseBasicParsing -Uri $audioUri -OutFile $OutputPath -PassThru
+$download = Invoke-WithRetry -OperationName "synthesis audio download" -Action { Invoke-AudioDownload -Uri $audioUri -OutputPath $OutputPath }
 $file = Get-Item $OutputPath
 
 if ($download.StatusCode -ne 200) {
@@ -48,3 +48,4 @@ Write-Host 'Synthesis integration summary:'
   ContentType = $download.Headers['Content-Type']
   SegmentCount = @($response.metadata.segments).Count
 } | Format-List
+

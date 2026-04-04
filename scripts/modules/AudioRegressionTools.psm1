@@ -1,5 +1,28 @@
 Set-StrictMode -Version Latest
 
+function Invoke-WithRetry {
+  param(
+    [scriptblock]$Action,
+    [int]$MaxAttempts = 3,
+    [int]$DelaySeconds = 2,
+    [string]$OperationName = 'operation'
+  )
+
+  $attempt = 0
+  while ($true) {
+    $attempt += 1
+    try {
+      return & $Action
+    } catch {
+      if ($attempt -ge $MaxAttempts) {
+        throw
+      }
+      Write-Host "Retrying $OperationName ($attempt/$MaxAttempts failed)..."
+      Start-Sleep -Seconds $DelaySeconds
+    }
+  }
+}
+
 function Invoke-JsonGet {
   param([string]$Url)
   Invoke-RestMethod -Method Get -Uri $Url
@@ -31,6 +54,15 @@ function Get-ReadinessJson {
 
     throw
   }
+}
+
+function Invoke-AudioDownload {
+  param(
+    [string]$Uri,
+    [string]$OutputPath
+  )
+
+  Invoke-WebRequest -UseBasicParsing -Uri $Uri -OutFile $OutputPath -PassThru
 }
 
 function Get-WavDurationMs {
@@ -220,4 +252,4 @@ function Assert-BaselineContrast {
   return $checks
 }
 
-Export-ModuleMember -Function Invoke-JsonGet, Invoke-JsonPost, Get-ReadinessJson, Get-WavDurationMs, Get-DockerCommandLine, Get-Average, Assert-ServiceIdentity, Assert-AnalyzeResponse, Assert-SynthesisResponse, Get-BaselineContrastChecks, Get-BaselineListeningChecklist, Assert-BaselineContrast
+Export-ModuleMember -Function Invoke-WithRetry, Invoke-JsonGet, Invoke-JsonPost, Get-ReadinessJson, Invoke-AudioDownload, Get-WavDurationMs, Get-DockerCommandLine, Get-Average, Assert-ServiceIdentity, Assert-AnalyzeResponse, Assert-SynthesisResponse, Get-BaselineContrastChecks, Get-BaselineListeningChecklist, Assert-BaselineContrast
