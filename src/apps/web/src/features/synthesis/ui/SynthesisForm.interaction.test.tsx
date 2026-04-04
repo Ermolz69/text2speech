@@ -23,6 +23,7 @@ describe("SynthesisForm interactions", () => {
           outputFormat: "mp3",
         }}
         requestState="idle"
+        loadingStage={null}
         errorMessage={null}
         voiceOptions={[
           { value: "voice-1", label: "Voice 1" },
