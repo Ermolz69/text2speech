@@ -1,5 +1,7 @@
 export type EmotionLabel =
   | "neutral"
+  | "happy"
+  | "sad"
   | "joy"
   | "playful"
   | "sadness"

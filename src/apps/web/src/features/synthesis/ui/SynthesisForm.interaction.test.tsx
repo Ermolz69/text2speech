@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 
+import type { FormEvent } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
@@ -7,7 +8,7 @@ import { SynthesisForm } from "./SynthesisForm";
 
 describe("SynthesisForm interactions", () => {
   it("calls all field change handlers and submit", () => {
-    const onSubmit = vi.fn((event: Event) => event.preventDefault());
+    const onSubmit = vi.fn((event: FormEvent<HTMLFormElement>) => event.preventDefault());
     const onTextChange = vi.fn();
     const onVoiceChange = vi.fn();
     const onModeChange = vi.fn();
