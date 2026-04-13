@@ -31,7 +31,7 @@ describe("ResultPanel", () => {
         summary={{ emotion: "happy", intensity: 2 }}
         outputFormat="wav"
         generationMs={842}
-        audioUrl="/audio/sample.wav"
+        audioUrl="/api/audio/sample.wav"
       />
     );
 
@@ -40,7 +40,7 @@ describe("ResultPanel", () => {
     expect(html).toContain(">2<");
     expect(html).toContain("wav");
     expect(html).toContain("842 ms");
-    expect(html).toContain("/audio/sample.wav");
+    expect(html).toContain("/api/audio/sample.wav");
     expect(html).toContain("Download audio");
     expect(html).toContain("audio");
   });

@@ -3,6 +3,7 @@ import type { AnalyzeSegmentDto, SynthesizeRequestDto, SynthesizeResponseDto } f
 
 export interface TtsAdapterClient {
   synthesize(payload: SynthesizeRequestDto): Promise<SynthesizeResponseDto>;
+  fetchAudio(filename: string): Promise<UpstreamAudioFile>;
 }
 
 type FetchLike = typeof fetch;
@@ -20,6 +21,12 @@ type UpstreamSynthesizeRequest = {
     cues: string[];
   }>;
 };
+
+export interface UpstreamAudioFile {
+  body: Buffer;
+  contentType?: string;
+  contentDisposition?: string;
+}
 
 const upstreamSynthesizeResponseSchema = z.object({
   audio_url: z.string().min(1),
@@ -213,6 +220,53 @@ export function createTtsAdapterClient(config: TtsAdapterClientConfig): TtsAdapt
           "TTS adapter service request failed",
           { cause: error instanceof Error ? error : undefined }
         );
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    },
+    async fetchAudio(filename: string): Promise<UpstreamAudioFile> {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), config.timeoutMs);
+
+      try {
+        const response = await fetchFn(`${baseUrl}/audio/${encodeURIComponent(filename)}`, {
+          method: "GET",
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          throw new TtsAdapterClientError(
+            "upstream",
+            "response_status",
+            `TTS adapter audio responded with status ${response.status}`,
+            { statusCode: response.status }
+          );
+        }
+
+        const body = Buffer.from(await response.arrayBuffer());
+
+        return {
+          body,
+          contentType: response.headers.get("content-type") ?? undefined,
+          contentDisposition: response.headers.get("content-disposition") ?? undefined,
+        };
+      } catch (error) {
+        if (error instanceof TtsAdapterClientError) {
+          throw error;
+        }
+
+        if (error instanceof Error && error.name === "AbortError") {
+          throw new TtsAdapterClientError(
+            "timeout",
+            "timeout",
+            "TTS adapter audio request timed out",
+            { cause: error }
+          );
+        }
+
+        throw new TtsAdapterClientError("upstream", "network", "TTS adapter audio request failed", {
+          cause: error instanceof Error ? error : undefined,
+        });
       } finally {
         clearTimeout(timeoutId);
       }

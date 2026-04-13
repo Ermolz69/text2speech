@@ -88,6 +88,35 @@ describe("ttsAdapterClient", () => {
     );
   });
 
+  it("fetches adapter audio and preserves response headers", async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      new Response(new Uint8Array([1, 2, 3]), {
+        status: 200,
+        headers: {
+          "Content-Type": "audio/wav",
+          "Content-Disposition": 'inline; filename="sample.wav"',
+        },
+      })
+    );
+
+    const client = createTtsAdapterClient({
+      baseUrl: "http://tts-adapter:8002",
+      timeoutMs: 3000,
+      fetchFn,
+    });
+
+    await expect(client.fetchAudio("sample.wav")).resolves.toEqual({
+      body: Buffer.from([1, 2, 3]),
+      contentType: "audio/wav",
+      contentDisposition: 'inline; filename="sample.wav"',
+    });
+
+    expect(fetchFn).toHaveBeenCalledWith("http://tts-adapter:8002/audio/sample.wav", {
+      method: "GET",
+      signal: expect.any(AbortSignal),
+    });
+  });
+
   it("surfaces timeout failures cleanly", async () => {
     vi.useFakeTimers();
 
@@ -145,6 +174,23 @@ describe("ttsAdapterClient", () => {
       kind: "upstream",
       reason: "response_status",
       statusCode: 503,
+    });
+  });
+
+  it("surfaces non-ok audio responses cleanly", async () => {
+    const fetchFn = vi.fn().mockResolvedValue(new Response("missing", { status: 404 }));
+
+    const client = createTtsAdapterClient({
+      baseUrl: "http://tts-adapter:8002",
+      timeoutMs: 3000,
+      fetchFn,
+    });
+
+    await expect(client.fetchAudio("missing.wav")).rejects.toMatchObject({
+      name: "TtsAdapterClientError",
+      kind: "upstream",
+      reason: "response_status",
+      statusCode: 404,
     });
   });
 

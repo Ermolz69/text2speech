@@ -232,6 +232,19 @@ function buildSynthesizePipelineRequest(
   };
 }
 
+function extractAudioFilename(audioUrl: string): string | null {
+  const match = /^\/audio\/([^/?#]+)$/.exec(audioUrl);
+  return match?.[1] ?? null;
+}
+
+function toGatewayAudioUrl(audioUrl: string): string {
+  const filename = extractAudioFilename(audioUrl);
+  if (!filename) {
+    throw new Error(`Unexpected adapter audio URL: ${audioUrl}`);
+  }
+  return `/api/audio/${filename}`;
+}
+
 export function createApp(dependencies: AppDependencies = {}): FastifyInstance {
   const app = Fastify({
     logger: true,
@@ -353,7 +366,11 @@ export function createApp(dependencies: AppDependencies = {}): FastifyInstance {
 
       try {
         const synthesizeRequest = buildSynthesizePipelineRequest(request.body, analyzeResponse);
-        return await ttsAdapterClient.synthesize(synthesizeRequest);
+        const synthesisResponse = await ttsAdapterClient.synthesize(synthesizeRequest);
+        return {
+          ...synthesisResponse,
+          audioUrl: toGatewayAudioUrl(synthesisResponse.audioUrl),
+        };
       } catch (error) {
         if (error instanceof TtsAdapterClientError) {
           logTtsAdapterClientError(error, request.log);
@@ -369,6 +386,43 @@ export function createApp(dependencies: AppDependencies = {}): FastifyInstance {
       }
     }
   );
+
+  app.get<{ Params: { filename: string } }>("/api/audio/:filename", async (request, reply) => {
+    try {
+      const audio = await ttsAdapterClient.fetchAudio(request.params.filename);
+
+      if (audio.contentType) {
+        void reply.header("Content-Type", audio.contentType);
+      }
+      if (audio.contentDisposition) {
+        void reply.header("Content-Disposition", audio.contentDisposition);
+      }
+
+      return reply.send(audio.body);
+    } catch (error) {
+      if (error instanceof TtsAdapterClientError) {
+        if (error.reason === "response_status" && error.statusCode === 404) {
+          return reply.status(404).send(
+            createApiErrorResponse({
+              code: "upstream_error",
+              message: "Audio file was not found",
+              status: 404,
+              path: getRequestPath(request.url),
+            })
+          );
+        }
+
+        const mapped = mapUpstreamClientError(
+          error,
+          getRequestPath(request.url),
+          "TTS adapter service"
+        );
+        return reply.status(mapped.status).send(mapped.response);
+      }
+
+      throw error;
+    }
+  });
 
   return app;
 }
