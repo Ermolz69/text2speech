@@ -27,7 +27,8 @@ That file is the authoritative launch guide for the current repo state.
 
 1. Put your Piper voice model in `models/piper/model.onnx`
 2. Put the matching config in `models/piper/model.onnx.json`
-3. Run:
+3. Copy `.env.example` to `.env` if you want to override ports, upstream URLs, timeouts, or the TTS output directory.
+4. Run:
 
 ```bash
 docker compose up -d --build
@@ -48,6 +49,17 @@ Official source list:
 ### Local
 
 Use the detailed runbook if you want all services on the host machine instead.
+
+Important environment examples now live in:
+
+- `.env.example`
+
+That file includes the currently used variables for:
+
+- shared ports
+- gateway upstream URLs and timeouts
+- Piper/ffmpeg paths
+- local TTS output placement
 
 ## Runtime topology
 
