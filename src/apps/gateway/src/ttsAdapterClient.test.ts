@@ -59,7 +59,7 @@ describe("ttsAdapterClient", () => {
       fetchFn,
     });
 
-    await expect(client.synthesize(payload)).resolves.toEqual({
+    await expect(client.synthesize(payload, { requestId: "req-456" })).resolves.toEqual({
       audioUrl: "/placeholder.wav",
       metadata: payload.metadata,
     });
@@ -70,6 +70,7 @@ describe("ttsAdapterClient", () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "X-Request-Id": "req-456",
         },
         body: JSON.stringify({
           segments: [
@@ -105,16 +106,22 @@ describe("ttsAdapterClient", () => {
       fetchFn,
     });
 
-    await expect(client.fetchAudio("sample.wav")).resolves.toEqual({
+    await expect(client.fetchAudio("sample.wav", { requestId: "req-audio" })).resolves.toEqual({
       body: Buffer.from([1, 2, 3]),
       contentType: "audio/wav",
       contentDisposition: 'inline; filename="sample.wav"',
     });
 
-    expect(fetchFn).toHaveBeenCalledWith("http://tts-adapter:8002/audio/sample.wav", {
-      method: "GET",
-      signal: expect.any(AbortSignal),
-    });
+    expect(fetchFn).toHaveBeenCalledWith(
+      "http://tts-adapter:8002/audio/sample.wav",
+      expect.objectContaining({
+        method: "GET",
+        headers: {
+          "X-Request-Id": "req-audio",
+        },
+        signal: expect.any(AbortSignal),
+      })
+    );
   });
 
   it("surfaces timeout failures cleanly", async () => {

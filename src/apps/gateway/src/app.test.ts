@@ -78,8 +78,40 @@ describe("gateway analyze route", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(textAnalysisClient.analyze).toHaveBeenCalledWith(payload);
+    expect(textAnalysisClient.analyze).toHaveBeenCalledWith(payload, {
+      requestId: expect.any(String),
+    });
+    expect(response.headers["x-request-id"]).toEqual(expect.any(String));
     expect(response.json()).toEqual(analyzeResponse);
+  });
+
+  it("preserves an incoming x-request-id and echoes it back", async () => {
+    const analyzeResponse: AnalyzeResponseDto = {
+      segments: [{ text: "Hello", emotion: "neutral", intensity: 0 }],
+    };
+    const textAnalysisClient = createTextAnalysisClientMock({
+      analyze: vi.fn().mockResolvedValue(analyzeResponse),
+    });
+
+    app = createApp({ textAnalysisClient });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/analyze",
+      headers: {
+        "x-request-id": "req-from-client",
+      },
+      payload: {
+        text: "Hello",
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["x-request-id"]).toBe("req-from-client");
+    expect(textAnalysisClient.analyze).toHaveBeenCalledWith(
+      { text: "Hello" },
+      { requestId: "req-from-client" }
+    );
   });
 
   it("returns the shared validation error envelope when text is missing", async () => {
@@ -307,7 +339,9 @@ describe("gateway tts debug route", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(textAnalysisClient.analyze).toHaveBeenCalledWith(payload);
+    expect(textAnalysisClient.analyze).toHaveBeenCalledWith(payload, {
+      requestId: expect.any(String),
+    });
     expect(ttsAdapterClient.synthesize).not.toHaveBeenCalled();
     expect(response.json()).toEqual(analyzeResponse);
   });
@@ -506,8 +540,14 @@ describe("gateway tts route", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(textAnalysisClient.analyze).toHaveBeenCalledWith({ text: payload.text });
-    expect(ttsAdapterClient.synthesize).toHaveBeenCalledWith(expectedSynthesizeRequest);
+    expect(textAnalysisClient.analyze).toHaveBeenCalledWith(
+      { text: payload.text },
+      { requestId: expect.any(String) }
+    );
+    expect(ttsAdapterClient.synthesize).toHaveBeenCalledWith(expectedSynthesizeRequest, {
+      requestId: expect.any(String),
+    });
+    expect(response.headers["x-request-id"]).toEqual(expect.any(String));
     expect(response.json()).toEqual({
       ...synthesizeResponse,
       audioUrl: "/api/audio/voice.wav",
@@ -551,16 +591,19 @@ describe("gateway tts route", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(ttsAdapterClient.synthesize).toHaveBeenCalledWith({
-      text: "Original",
-      voiceId: "voice-1",
-      metadata: {
-        format: "wav",
-        emotion: "anger",
-        intensity: 3,
-        segments: analyzeResponse.segments,
+    expect(ttsAdapterClient.synthesize).toHaveBeenCalledWith(
+      {
+        text: "Original",
+        voiceId: "voice-1",
+        metadata: {
+          format: "wav",
+          emotion: "anger",
+          intensity: 3,
+          segments: analyzeResponse.segments,
+        },
       },
-    });
+      { requestId: expect.any(String) }
+    );
     expect(response.json()).toEqual({
       audioUrl: "/api/audio/voice.wav",
       metadata: {
@@ -991,7 +1034,10 @@ describe("gateway audio proxy route", () => {
     expect(response.headers["content-type"]).toContain("audio/wav");
     expect(response.headers["content-disposition"]).toBe('inline; filename="sample.wav"');
     expect(response.rawPayload).toEqual(Buffer.from([1, 2, 3]));
-    expect(ttsAdapterClient.fetchAudio).toHaveBeenCalledWith("sample.wav");
+    expect(ttsAdapterClient.fetchAudio).toHaveBeenCalledWith("sample.wav", {
+      requestId: expect.any(String),
+    });
+    expect(response.headers["x-request-id"]).toEqual(expect.any(String));
   });
 
   it("returns 404 when the adapter audio file is missing", async () => {

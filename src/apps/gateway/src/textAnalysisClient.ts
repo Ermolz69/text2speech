@@ -2,7 +2,10 @@ import { z } from "zod";
 import type { AnalyzeRequestDto, AnalyzeResponseDto, EmotionLabel } from "shared";
 
 export interface TextAnalysisClient {
-  analyze(payload: AnalyzeRequestDto): Promise<AnalyzeResponseDto>;
+  analyze(
+    payload: AnalyzeRequestDto,
+    options?: { requestId?: string }
+  ): Promise<AnalyzeResponseDto>;
 }
 
 type FetchLike = typeof fetch;
@@ -123,7 +126,10 @@ export function createTextAnalysisClient(config: TextAnalysisClientConfig): Text
   const baseUrl = normalizeBaseUrl(config.baseUrl);
 
   return {
-    async analyze(payload: AnalyzeRequestDto): Promise<AnalyzeResponseDto> {
+    async analyze(
+      payload: AnalyzeRequestDto,
+      options?: { requestId?: string }
+    ): Promise<AnalyzeResponseDto> {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), config.timeoutMs);
 
@@ -132,6 +138,7 @@ export function createTextAnalysisClient(config: TextAnalysisClientConfig): Text
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            ...(options?.requestId ? { "X-Request-Id": options.requestId } : {}),
           },
           body: JSON.stringify(payload),
           signal: controller.signal,

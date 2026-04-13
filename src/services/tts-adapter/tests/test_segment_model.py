@@ -34,6 +34,7 @@ def test_health_reports_readiness_from_provider() -> None:
         del app.state.synthesis_provider
 
     assert response.status_code == 200
+    assert response.headers["x-request-id"]
     assert response.json() == {
         "status": "ok",
         "service": "tts-adapter",
@@ -46,6 +47,7 @@ def test_health_reports_readiness_from_provider() -> None:
         },
     }
     assert ready_response.status_code == 200
+    assert ready_response.headers["x-request-id"]
     assert ready_response.json()["ready"] is True
 
 
@@ -104,11 +106,16 @@ def test_synthesize_accepts_segment_structure() -> None:
     }
 
     try:
-        response = client.post("/synthesize", json=payload)
+        response = client.post(
+            "/synthesize",
+            json=payload,
+            headers={"X-Request-Id": "req-tts-123"},
+        )
     finally:
         del app.state.synthesis_provider
 
     assert response.status_code == 200
+    assert response.headers["x-request-id"] == "req-tts-123"
     body = response.json()
     assert body == {
         "audio_url": "/stub.wav",
@@ -164,9 +171,14 @@ def test_synthesize_delegates_to_configured_provider() -> None:
 
 
 def test_synthesize_validation_errors_use_shared_envelope() -> None:
-    response = client.post("/synthesize", json={})
+    response = client.post(
+        "/synthesize",
+        json={},
+        headers={"X-Request-Id": "req-tts-validation"},
+    )
 
     assert response.status_code == 422
+    assert response.headers["x-request-id"] == "req-tts-validation"
     assert response.json() == {
         "error": {
             "code": "validation_error",
@@ -207,6 +219,7 @@ def test_synthesize_runtime_errors_use_shared_envelope() -> None:
     )
 
     assert response.status_code == 500
+    assert response.headers["x-request-id"]
     assert response.json() == {
         "error": {
             "code": "internal_error",

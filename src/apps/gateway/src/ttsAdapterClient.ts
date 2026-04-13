@@ -2,8 +2,11 @@ import { z } from "zod";
 import type { AnalyzeSegmentDto, SynthesizeRequestDto, SynthesizeResponseDto } from "shared";
 
 export interface TtsAdapterClient {
-  synthesize(payload: SynthesizeRequestDto): Promise<SynthesizeResponseDto>;
-  fetchAudio(filename: string): Promise<UpstreamAudioFile>;
+  synthesize(
+    payload: SynthesizeRequestDto,
+    options?: { requestId?: string }
+  ): Promise<SynthesizeResponseDto>;
+  fetchAudio(filename: string, options?: { requestId?: string }): Promise<UpstreamAudioFile>;
 }
 
 type FetchLike = typeof fetch;
@@ -155,7 +158,10 @@ export function createTtsAdapterClient(config: TtsAdapterClientConfig): TtsAdapt
   const baseUrl = normalizeBaseUrl(config.baseUrl);
 
   return {
-    async synthesize(payload: SynthesizeRequestDto): Promise<SynthesizeResponseDto> {
+    async synthesize(
+      payload: SynthesizeRequestDto,
+      options?: { requestId?: string }
+    ): Promise<SynthesizeResponseDto> {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), config.timeoutMs);
 
@@ -164,6 +170,7 @@ export function createTtsAdapterClient(config: TtsAdapterClientConfig): TtsAdapt
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            ...(options?.requestId ? { "X-Request-Id": options.requestId } : {}),
           },
           body: JSON.stringify(mapSynthesizeRequest(payload)),
           signal: controller.signal,
@@ -224,13 +231,19 @@ export function createTtsAdapterClient(config: TtsAdapterClientConfig): TtsAdapt
         clearTimeout(timeoutId);
       }
     },
-    async fetchAudio(filename: string): Promise<UpstreamAudioFile> {
+    async fetchAudio(
+      filename: string,
+      options?: { requestId?: string }
+    ): Promise<UpstreamAudioFile> {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), config.timeoutMs);
 
       try {
         const response = await fetchFn(`${baseUrl}/audio/${encodeURIComponent(filename)}`, {
           method: "GET",
+          headers: {
+            ...(options?.requestId ? { "X-Request-Id": options.requestId } : {}),
+          },
           signal: controller.signal,
         });
 

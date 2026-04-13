@@ -43,7 +43,7 @@ describe("textAnalysisClient", () => {
       fetchFn,
     });
 
-    await expect(client.analyze({ text: "Hello! :)" })).resolves.toEqual({
+    await expect(client.analyze({ text: "Hello! :)" }, { requestId: "req-123" })).resolves.toEqual({
       segments: [
         {
           text: "Hello! :)",
@@ -57,6 +57,15 @@ describe("textAnalysisClient", () => {
         },
       ],
     });
+    expect(fetchFn).toHaveBeenCalledWith(
+      "http://text-analysis:8001/analyze",
+      expect.objectContaining({
+        headers: {
+          "Content-Type": "application/json",
+          "X-Request-Id": "req-123",
+        },
+      })
+    );
   });
 
   it("surfaces timeout failures cleanly", async () => {
