@@ -70,6 +70,8 @@ docker compose up -d --build
 - the `gateway` image now builds and starts reliably in Docker
 - the `tts-adapter` image now includes the Piper CLI through `piper-tts`
 - the Piper model directory is mounted from `./models/piper` into `/models/piper`
+- generated audio is persisted through a bind mount from `./src/services/tts-adapter/generated-audio` into `/app/generated-audio`
+- generated WAV files remain on the host between `docker compose down` / `up` runs unless you delete the folder manually
 
 ### Verification commands
 
@@ -84,6 +86,10 @@ Real audio generation check:
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/synthesis_integration_check.ps1
 ```
+
+Persistent output location on the host:
+
+- `src/services/tts-adapter/generated-audio`
 
 ## Local startup
 

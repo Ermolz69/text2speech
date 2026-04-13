@@ -36,6 +36,12 @@ powershell -ExecutionPolicy Bypass -File scripts/smoke_check.ps1 -RequireSynthes
 powershell -ExecutionPolicy Bypass -File scripts/synthesis_integration_check.ps1
 ```
 
+Generated WAV files are persisted on the host under:
+
+- `src/services/tts-adapter/generated-audio`
+
+They survive `docker compose down` / `up` because the directory is bind-mounted into the `tts-adapter` container.
+
 ### Verified starting voices
 
 - `en_US-lessac-medium`

@@ -30,5 +30,6 @@ htmlcov
 
 benchmarks
 reports
+src/services/tts-adapter/generated-audio
 
 *.log

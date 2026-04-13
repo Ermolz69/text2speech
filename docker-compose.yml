@@ -74,8 +74,10 @@ services:
       - PIPER_BIN=${PIPER_BIN:-/usr/local/bin/piper}
       - PIPER_MODEL_PATH=${PIPER_MODEL_PATH:-/models/piper/model.onnx}
       - FFMPEG_BIN=${FFMPEG_BIN:-/usr/bin/ffmpeg}
+      - TTS_OUTPUT_DIR=/app/generated-audio
     volumes:
       - ${PIPER_MODEL_DIR:-./models/piper}:/models/piper:ro
+      - ${TTS_OUTPUT_DIR:-./src/services/tts-adapter/generated-audio}:/app/generated-audio
     ports:
       - "${PORT_TTS_ADAPTER:-8002}:8002"
     healthcheck:

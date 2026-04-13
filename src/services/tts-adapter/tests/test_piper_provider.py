@@ -51,6 +51,14 @@ def test_piper_provider_reports_not_ready_when_model_is_missing(tmp_path: Path) 
     }
 
 
+def test_resolve_audio_output_dir_uses_env_override(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("TTS_OUTPUT_DIR", str(tmp_path / "persistent-audio"))
+
+    resolved = resolve_audio_output_dir()
+
+    assert resolved == tmp_path / "persistent-audio"
+
+
 def test_prepare_synthesis_plan_makes_segment_assembly_explicit(tmp_path: Path) -> None:
     provider = PiperSynthesisProvider(
         piper_bin="piper-bin",
