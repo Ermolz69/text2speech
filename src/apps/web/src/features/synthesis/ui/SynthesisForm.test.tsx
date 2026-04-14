@@ -12,6 +12,7 @@ describe("SynthesisForm", () => {
       outputFormat: "wav" as const,
     },
     requestState: "idle" as const,
+    loadingStage: null,
     errorMessage: null,
     voiceOptions: [
       { value: "voice-1", label: "Voice 1" },
@@ -48,7 +49,7 @@ describe("SynthesisForm", () => {
       />
     );
 
-    expect(html).toContain("Generating...");
+    expect(html).toContain("Generating\u2026");
     expect(html).toContain("disabled");
     expect(html).toContain("Gateway request failed with status 502");
   });

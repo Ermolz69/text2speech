@@ -15,7 +15,6 @@ describe("ResultPanel", () => {
       />
     );
 
-    expect(html).toContain("Status:");
     expect(html).toContain("idle");
     expect(html).toContain("neutral");
     expect(html).toContain(">0<");
@@ -35,7 +34,7 @@ describe("ResultPanel", () => {
       />
     );
 
-    expect(html).toContain("success");
+    expect(html).toContain("done");
     expect(html).toContain("happy");
     expect(html).toContain(">2<");
     expect(html).toContain("wav");

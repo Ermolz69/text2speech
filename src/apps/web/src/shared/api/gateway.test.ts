@@ -87,7 +87,7 @@ describe("gateway api client", () => {
     );
 
     await expect(analyzeText({ text: "Hello" })).rejects.toThrow(
-      "Gateway request failed with status 502"
+      "A backend service is unavailable. Make sure Docker is running."
     );
   });
 });

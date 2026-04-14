@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import type { AnalyzeSegmentDto } from "shared";
 
-import type { FormState, RequestState } from "@features/synthesis";
+import type { FormState, LoadingStage, RequestState } from "@features/synthesis";
 import { analyzeText, synthesizeText } from "@shared/api";
 
 import { DEFAULT_TEXT, voiceOptions } from "./constants";
@@ -16,6 +16,7 @@ export function useHomePage() {
     outputFormat: "mp3",
   });
   const [requestState, setRequestState] = useState<RequestState>("idle");
+  const [loadingStage, setLoadingStage] = useState<LoadingStage>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [segments, setSegments] = useState<AnalyzeSegmentDto[]>([]);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
@@ -34,6 +35,7 @@ export function useHomePage() {
     }
 
     setRequestState("loading");
+    setLoadingStage("analyzing");
     setErrorMessage(null);
     setAudioUrl(null);
     setGenerationMs(null);
@@ -43,6 +45,8 @@ export function useHomePage() {
     try {
       const analysis = await analyzeText({ text: formState.text });
       setSegments(analysis.segments);
+
+      setLoadingStage("synthesizing");
 
       const synthesis = await synthesizeText({
         text: formState.text,
@@ -58,8 +62,10 @@ export function useHomePage() {
       setAudioUrl(synthesis.audioUrl);
       setGenerationMs(Math.round(performance.now() - startedAt));
       setRequestState("success");
+      setLoadingStage(null);
     } catch (error) {
       setRequestState("error");
+      setLoadingStage(null);
       setErrorMessage(
         error instanceof Error && error.message
           ? error.message
@@ -91,6 +97,7 @@ export function useHomePage() {
   return {
     formState,
     requestState,
+    loadingStage,
     errorMessage,
     segments,
     summary,
