@@ -22,6 +22,7 @@ function createTextAnalysisClientMock(
 function createTtsAdapterClientMock(overrides: Partial<TtsAdapterClient> = {}): TtsAdapterClient {
   return {
     synthesize: vi.fn(),
+    fetchAudio: vi.fn(),
     ...overrides,
   };
 }
@@ -77,8 +78,40 @@ describe("gateway analyze route", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(textAnalysisClient.analyze).toHaveBeenCalledWith(payload);
+    expect(textAnalysisClient.analyze).toHaveBeenCalledWith(payload, {
+      requestId: expect.any(String),
+    });
+    expect(response.headers["x-request-id"]).toEqual(expect.any(String));
     expect(response.json()).toEqual(analyzeResponse);
+  });
+
+  it("preserves an incoming x-request-id and echoes it back", async () => {
+    const analyzeResponse: AnalyzeResponseDto = {
+      segments: [{ text: "Hello", emotion: "neutral", intensity: 0 }],
+    };
+    const textAnalysisClient = createTextAnalysisClientMock({
+      analyze: vi.fn().mockResolvedValue(analyzeResponse),
+    });
+
+    app = createApp({ textAnalysisClient });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/analyze",
+      headers: {
+        "x-request-id": "req-from-client",
+      },
+      payload: {
+        text: "Hello",
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["x-request-id"]).toBe("req-from-client");
+    expect(textAnalysisClient.analyze).toHaveBeenCalledWith(
+      { text: "Hello" },
+      { requestId: "req-from-client" }
+    );
   });
 
   it("returns the shared validation error envelope when text is missing", async () => {
@@ -306,7 +339,9 @@ describe("gateway tts debug route", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(textAnalysisClient.analyze).toHaveBeenCalledWith(payload);
+    expect(textAnalysisClient.analyze).toHaveBeenCalledWith(payload, {
+      requestId: expect.any(String),
+    });
     expect(ttsAdapterClient.synthesize).not.toHaveBeenCalled();
     expect(response.json()).toEqual(analyzeResponse);
   });
@@ -466,7 +501,7 @@ describe("gateway tts route", () => {
     });
 
     const synthesizeResponse: SynthesizeResponseDto = {
-      audioUrl: "/voice.wav",
+      audioUrl: "/audio/voice.wav",
       metadata: {
         format: "wav",
         emotion: "anger",
@@ -505,9 +540,18 @@ describe("gateway tts route", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(textAnalysisClient.analyze).toHaveBeenCalledWith({ text: payload.text });
-    expect(ttsAdapterClient.synthesize).toHaveBeenCalledWith(expectedSynthesizeRequest);
-    expect(response.json()).toEqual(synthesizeResponse);
+    expect(textAnalysisClient.analyze).toHaveBeenCalledWith(
+      { text: payload.text },
+      { requestId: expect.any(String) }
+    );
+    expect(ttsAdapterClient.synthesize).toHaveBeenCalledWith(expectedSynthesizeRequest, {
+      requestId: expect.any(String),
+    });
+    expect(response.headers["x-request-id"]).toEqual(expect.any(String));
+    expect(response.json()).toEqual({
+      ...synthesizeResponse,
+      audioUrl: "/api/audio/voice.wav",
+    });
   });
 
   it("uses analyze-generated segments when caller provides only allowed metadata fields", async () => {
@@ -521,7 +565,7 @@ describe("gateway tts route", () => {
 
     const ttsAdapterClient = createTtsAdapterClientMock({
       synthesize: vi.fn().mockResolvedValue({
-        audioUrl: "/voice.wav",
+        audioUrl: "/audio/voice.wav",
         metadata: {
           segments: analyzeResponse.segments,
         },
@@ -547,13 +591,22 @@ describe("gateway tts route", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(ttsAdapterClient.synthesize).toHaveBeenCalledWith({
-      text: "Original",
-      voiceId: "voice-1",
+    expect(ttsAdapterClient.synthesize).toHaveBeenCalledWith(
+      {
+        text: "Original",
+        voiceId: "voice-1",
+        metadata: {
+          format: "wav",
+          emotion: "anger",
+          intensity: 3,
+          segments: analyzeResponse.segments,
+        },
+      },
+      { requestId: expect.any(String) }
+    );
+    expect(response.json()).toEqual({
+      audioUrl: "/api/audio/voice.wav",
       metadata: {
-        format: "wav",
-        emotion: "anger",
-        intensity: 3,
         segments: analyzeResponse.segments,
       },
     });
@@ -842,6 +895,41 @@ describe("gateway tts route", () => {
     });
   });
 
+  it("rewrites adapter audio url into a gateway-owned audio url", async () => {
+    const textAnalysisClient = createTextAnalysisClientMock({
+      analyze: vi.fn().mockResolvedValue({
+        segments: [{ text: "Hello", emotion: "neutral", intensity: 0 }],
+      }),
+    });
+    const ttsAdapterClient = createTtsAdapterClientMock({
+      synthesize: vi.fn().mockResolvedValue({
+        audioUrl: "/audio/sample.wav",
+        metadata: {
+          segments: [{ text: "Hello", emotion: "neutral", intensity: 0 }],
+        },
+      }),
+    });
+
+    app = createApp({ textAnalysisClient, ttsAdapterClient });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/tts",
+      payload: {
+        text: "Hello",
+        voiceId: "voice-1",
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      audioUrl: "/api/audio/sample.wav",
+      metadata: {
+        segments: [{ text: "Hello", emotion: "neutral", intensity: 0 }],
+      },
+    });
+  });
+
   it("returns a shared upstream error when synthesize fails after analyze succeeds", async () => {
     const textAnalysisClient = createTextAnalysisClientMock({
       analyze: vi.fn().mockResolvedValue({
@@ -910,6 +998,104 @@ describe("gateway tts route", () => {
         message: "Internal server error",
         status: 500,
         path: "/api/tts",
+      },
+    });
+  });
+});
+
+describe("gateway audio proxy route", () => {
+  let app = createApp();
+
+  afterEach(async () => {
+    await app.close();
+    app = createApp();
+  });
+
+  it("proxies playable audio from tts-adapter and preserves headers", async () => {
+    const ttsAdapterClient = createTtsAdapterClientMock({
+      fetchAudio: vi.fn().mockResolvedValue({
+        body: Buffer.from([1, 2, 3]),
+        contentType: "audio/wav",
+        contentDisposition: 'inline; filename="sample.wav"',
+      }),
+    });
+
+    app = createApp({
+      textAnalysisClient: createTextAnalysisClientMock(),
+      ttsAdapterClient,
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/audio/sample.wav",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["content-type"]).toContain("audio/wav");
+    expect(response.headers["content-disposition"]).toBe('inline; filename="sample.wav"');
+    expect(response.rawPayload).toEqual(Buffer.from([1, 2, 3]));
+    expect(ttsAdapterClient.fetchAudio).toHaveBeenCalledWith("sample.wav", {
+      requestId: expect.any(String),
+    });
+    expect(response.headers["x-request-id"]).toEqual(expect.any(String));
+  });
+
+  it("returns 404 when the adapter audio file is missing", async () => {
+    const ttsAdapterClient = createTtsAdapterClientMock({
+      fetchAudio: vi
+        .fn()
+        .mockRejectedValue(
+          new TtsAdapterClientError("upstream", "response_status", "missing", { statusCode: 404 })
+        ),
+    });
+
+    app = createApp({
+      textAnalysisClient: createTextAnalysisClientMock(),
+      ttsAdapterClient,
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/audio/missing.wav",
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual({
+      error: {
+        code: "upstream_error",
+        message: "Audio file was not found",
+        status: 404,
+        path: "/api/audio/missing.wav",
+      },
+    });
+  });
+
+  it("returns 504 when the adapter audio request times out", async () => {
+    const ttsAdapterClient = createTtsAdapterClientMock({
+      fetchAudio: vi
+        .fn()
+        .mockRejectedValue(
+          new TtsAdapterClientError("timeout", "timeout", "TTS adapter audio request timed out")
+        ),
+    });
+
+    app = createApp({
+      textAnalysisClient: createTextAnalysisClientMock(),
+      ttsAdapterClient,
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/audio/sample.wav",
+    });
+
+    expect(response.statusCode).toBe(504);
+    expect(response.json()).toEqual({
+      error: {
+        code: "upstream_timeout",
+        message: "TTS adapter service timed out",
+        status: 504,
+        path: "/api/audio/sample.wav",
       },
     });
   });

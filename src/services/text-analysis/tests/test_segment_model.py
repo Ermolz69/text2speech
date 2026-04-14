@@ -1,4 +1,4 @@
-from fastapi.testclient import TestClient
+﻿from fastapi.testclient import TestClient
 
 from app.main import app
 from app.models.segment import SegmentMetadata
@@ -15,7 +15,7 @@ def test_segment_model_validates_blank_text() -> None:
         raise AssertionError("Expected validation error")
 
 
-def test_analyze_returns_stable_segment_shape() -> None:
+def test_analyze_returns_shared_segment_shape() -> None:
     response = client.post("/analyze", json={"text": "Hello! :)"})
 
     assert response.status_code == 200
@@ -24,11 +24,16 @@ def test_analyze_returns_stable_segment_shape() -> None:
     assert len(body["segments"]) == 1
 
     segment = body["segments"][0]
-    assert segment["text"] == "Hello! :)"
-    assert segment["emotion"] == "happy"
-    assert segment["intensity"] >= 0.6
-    assert segment["pause_ms"] >= 0
-    assert "cues" in segment
+    assert segment == {
+        "text": "Hello! :)",
+        "emotion": "joy",
+        "intensity": 2,
+        "emoji": ["positive"],
+        "punctuation": ["exclamation"],
+        "pauseAfterMs": 150,
+        "rate": 1.18,
+        "pitchHint": 3.0,
+    }
 
 
 def test_analyze_normalizes_spaces_before_analysis() -> None:
@@ -47,9 +52,9 @@ def test_analyze_normalizes_repeated_punctuation_before_analysis() -> None:
     segment = body["segments"][0]
 
     assert segment["text"] == "Hello!"
-    assert "punctuation:exclamation" in segment["cues"]
+    assert segment["punctuation"] == ["exclamation"]
     assert segment["emotion"] == "neutral"
-    assert segment["intensity"] == 0.0
+    assert segment["intensity"] == 0
 
 
 def test_analyze_normalizes_basic_text_noise_and_ellipsis() -> None:
@@ -59,11 +64,15 @@ def test_analyze_normalizes_basic_text_noise_and_ellipsis() -> None:
     body = response.json()
     segment = body["segments"][0]
 
-    assert segment["text"] == "Wait..."
-    assert segment["emotion"] == "sad"
-    assert segment["intensity"] == 0.4
-    assert "punctuation:ellipsis" in segment["cues"]
-    assert segment["pause_ms"] == 300
+    assert segment == {
+        "text": "Wait...",
+        "emotion": "sadness",
+        "intensity": 0,
+        "punctuation": ["ellipsis"],
+        "pauseAfterMs": 220,
+        "rate": 0.96,
+        "pitchHint": 0.0,
+    }
 
 
 def test_analyze_returns_multiple_segments_with_independent_metadata() -> None:
@@ -72,14 +81,14 @@ def test_analyze_returns_multiple_segments_with_independent_metadata() -> None:
     assert response.status_code == 200
     body = response.json()
     assert [segment["text"] for segment in body["segments"]] == ["Hello! :)", "How are you?"]
-    assert body["segments"][0]["emotion"] == "happy"
-    assert "emoji:positive" in body["segments"][0]["cues"]
+    assert body["segments"][0]["emotion"] == "joy"
+    assert body["segments"][0]["emoji"] == ["positive"]
     assert body["segments"][1]["emotion"] == "neutral"
-    assert body["segments"][1]["intensity"] == 0.0
-    assert "punctuation:question" in body["segments"][1]["cues"]
+    assert body["segments"][1]["intensity"] == 0
+    assert body["segments"][1]["punctuation"] == ["question"]
 
 
-def test_analyze_exposes_mixed_punctuation_cue_in_segment_metadata() -> None:
+def test_analyze_exposes_mixed_punctuation_in_shared_segment_metadata() -> None:
     response = client.post("/analyze", json={"text": "Really?!"})
 
     assert response.status_code == 200
@@ -87,11 +96,9 @@ def test_analyze_exposes_mixed_punctuation_cue_in_segment_metadata() -> None:
     segment = body["segments"][0]
 
     assert segment["text"] == "Really?!"
-    assert "punctuation:exclamation" in segment["cues"]
-    assert "punctuation:question" in segment["cues"]
-    assert "punctuation:mixed" in segment["cues"]
+    assert segment["punctuation"] == ["exclamation", "question", "mixed"]
     assert segment["emotion"] == "neutral"
-    assert segment["intensity"] == 0.0
+    assert segment["intensity"] == 0
 
 
 def test_analyze_splits_normalized_repeated_punctuation_into_multiple_segments() -> None:
@@ -101,8 +108,8 @@ def test_analyze_splits_normalized_repeated_punctuation_into_multiple_segments()
     body = response.json()
     assert [segment["text"] for segment in body["segments"]] == ["Hello!", "What?"]
     assert body["segments"][0]["emotion"] == "neutral"
-    assert body["segments"][0]["intensity"] == 0.0
-    assert "punctuation:question" in body["segments"][1]["cues"]
+    assert body["segments"][0]["intensity"] == 0
+    assert body["segments"][1]["punctuation"] == ["question"]
     assert body["segments"][1]["emotion"] == "neutral"
 
 
@@ -155,3 +162,4 @@ def test_analyze_runtime_errors_use_shared_envelope() -> None:
             "path": "/analyze",
         }
     }
+

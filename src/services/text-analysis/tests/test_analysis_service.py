@@ -29,4 +29,4 @@ def test_analyze_text_maps_ellipsis_segment_to_sad() -> None:
     segment = response.segments[0]
     assert segment.text == "Wait..."
     assert segment.emotion.value == "sad"
-    assert segment.intensity == 0.4
+    assert segment.intensity == 0.2

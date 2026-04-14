@@ -1,0 +1,92 @@
+{
+  "voiceId": "voice-1",
+  "prompts": [
+    {
+      "id": "1",
+      "title": "Neutral baseline",
+      "text": "Hello. This is a neutral test."
+    },
+    {
+      "id": "2",
+      "title": "Emphatic exclamation",
+      "text": "Hello! This is amazing!"
+    },
+    {
+      "id": "3",
+      "title": "Ellipsis hesitation",
+      "text": "Hello... I am not sure about this..."
+    },
+    {
+      "id": "4",
+      "title": "Mixed punctuation",
+      "text": "Hello?! What happened here?!"
+    },
+    {
+      "id": "5",
+      "title": "Positive emoticon",
+      "text": "I got the job! :)"
+    },
+    {
+      "id": "6",
+      "title": "Plain statement",
+      "text": "I got the job."
+    },
+    {
+      "id": "7",
+      "title": "Unicode emoji",
+      "text": "I am happy \ud83d\ude0a"
+    },
+    {
+      "id": "8",
+      "title": "Plain happy statement",
+      "text": "I am happy."
+    },
+    {
+      "id": "9",
+      "title": "Segmented neutral",
+      "text": "Wait. I need to think. Then I will answer."
+    },
+    {
+      "id": "10",
+      "title": "Expressive multi-segment",
+      "text": "Wait... I need to think!!! Then I will answer :)"
+    }
+  ],
+  "pairs": [
+    {
+      "label": "1 vs 2 - neutral vs emphatic",
+      "left": "1",
+      "right": "2"
+    },
+    {
+      "label": "2 vs 5 - exclamation vs exclamation plus positive cue",
+      "left": "2",
+      "right": "5"
+    },
+    {
+      "label": "3 vs 9 - hesitation vs calm segmented speech",
+      "left": "3",
+      "right": "9"
+    },
+    {
+      "label": "4 vs 2 - mixed punctuation vs simple excitement",
+      "left": "4",
+      "right": "2"
+    },
+    {
+      "label": "6 vs 8 - plain statement variants",
+      "left": "6",
+      "right": "8"
+    },
+    {
+      "label": "7 vs 8 - emoji influence",
+      "left": "7",
+      "right": "8"
+    },
+    {
+      "label": "9 vs 10 - plain vs expressive multi-segment",
+      "left": "9",
+      "right": "10"
+    }
+  ]
+}

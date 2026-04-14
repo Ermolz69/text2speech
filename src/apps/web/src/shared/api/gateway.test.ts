@@ -36,7 +36,7 @@ describe("gateway api client", () => {
 
   it("posts synthesis requests to the gateway", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ audioUrl: "/audio/test.wav" }), {
+      new Response(JSON.stringify({ audioUrl: "/api/audio/test.wav" }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       })
@@ -63,7 +63,7 @@ describe("gateway api client", () => {
       },
       body: JSON.stringify(payload),
     });
-    expect(result.audioUrl).toBe("/audio/test.wav");
+    expect(result.audioUrl).toBe("/api/audio/test.wav");
   });
 
   it("loads health status", async () => {

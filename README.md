@@ -1,4 +1,4 @@
-# Emotional TTS
+﻿# Emotional TTS
 
 Emotion-aware text-to-speech monorepo with a React web app, a Fastify gateway, a Python text-analysis service, and a Python TTS adapter.
 
@@ -9,9 +9,10 @@ The repository currently implements a working MVP pipeline with these characteri
 - the web app sends requests to the gateway only;
 - the gateway validates public payloads and orchestrates downstream services;
 - the text-analysis service normalizes text, splits it into segments, extracts cues, maps a small internal emotion set, and plans prosody;
+- the text-analysis and tts-adapter HTTP boundaries now validate shared camelCase DTOs directly;
 - the TTS adapter exposes a provider boundary and the default provider invokes Piper CLI to generate a real WAV file;
 - `/api/tts/debug` returns gateway-shaped analysis metadata without synthesis;
-- `/api/tts` runs the full gateway pipeline and returns `audioUrl` from the adapter.
+- `/api/tts` runs the full gateway pipeline and returns a gateway-owned `audioUrl` under `/api/audio/<file>.wav`.
 
 ## Read this first
 
@@ -27,13 +28,20 @@ That file is the authoritative launch guide for the current repo state.
 
 1. Put your Piper voice model in `models/piper/model.onnx`
 2. Put the matching config in `models/piper/model.onnx.json`
-3. Run:
+3. Copy `.env.example` to `.env` if you want to override ports, upstream URLs, timeouts, or the TTS output directory.
+4. Run:
 
 ```bash
 docker compose up -d --build
 powershell -ExecutionPolicy Bypass -File scripts/smoke_check.ps1 -RequireSynthesisReady
 powershell -ExecutionPolicy Bypass -File scripts/synthesis_integration_check.ps1
 ```
+
+Generated WAV files are persisted on the host under:
+
+- `src/services/tts-adapter/generated-audio`
+
+They survive `docker compose down` / `up` because the directory is bind-mounted into the `tts-adapter` container.
 
 ### Verified starting voices
 
@@ -48,6 +56,17 @@ Official source list:
 ### Local
 
 Use the detailed runbook if you want all services on the host machine instead.
+
+Important environment examples now live in:
+
+- `.env.example`
+
+That file includes the currently used variables for:
+
+- shared ports
+- gateway upstream URLs and timeouts
+- Piper/ffmpeg paths
+- local TTS output placement
 
 ## Runtime topology
 
@@ -66,17 +85,31 @@ Gateway health endpoint.
 
 ### `POST /api/analyze`
 
-Validates `{ "text": string }` and returns gateway-shaped segment metadata.
+Validates `{ "text": string }` and returns shared segment metadata in camelCase:
+
+- `text`
+- `emotion`
+- `intensity`
+- optional `emoji`
+- optional `punctuation`
+- optional `pauseAfterMs`
+- optional `rate`
+- optional `pitchHint`
 
 ### `POST /api/tts/debug`
 
-Runs the same analysis as `/api/analyze` and returns the same gateway-shaped metadata.
+Runs the same analysis as `/api/analyze` and returns the same shared metadata.
 
 ### `POST /api/tts`
 
-Validates a synthesis request and runs the gateway pipeline.
+Validates a synthesis request with the shared shape:
 
-The resulting `audioUrl` now points to a real downloadable WAV when the Piper model is present.
+- `text`
+- `voiceId`
+- optional `metadata`
+- `metadata.segments` in the same shared segment format
+
+The resulting `audioUrl` is a stable gateway URL that points to a real downloadable WAV when the Piper model is present.
 
 ## Internal services
 
@@ -92,17 +125,20 @@ Current internal pipeline:
 4. map internal emotions (`neutral`, `happy`, `sad`);
 5. compute prosody hints per segment.
 
+The public HTTP response already converts that internal state into the shared DTO shape.
+
 ### TTS adapter
 
 FastAPI service at `src/services/tts-adapter`.
 
-Current direct endpoint:
+Current direct endpoints:
 
 - `POST /synthesize`
 - `GET /health`
 - `GET /health/ready`
+- `GET /audio/<file>.wav`
 
-The endpoint delegates through a provider abstraction and the default Piper provider writes generated WAV files that are exposed under `/audio/<file>.wav`.
+The adapter validates the shared synthesis request shape, maps it into internal segment metadata for the provider, and returns a shared synthesis response with `audioUrl`.
 
 ## Local development
 

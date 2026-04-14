@@ -34,4 +34,7 @@ reports/*
 benchmarks/*
 !benchmarks/.gitkeep
 
+src/services/tts-adapter/generated-audio/*
+!src/services/tts-adapter/generated-audio/.gitkeep
+
 AGENTS.md

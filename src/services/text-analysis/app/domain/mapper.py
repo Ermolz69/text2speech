@@ -17,6 +17,6 @@ def map_emotion(signals: ExtractedSignals) -> EmotionMapping:
         return EmotionMapping(emotion=Emotion.HAPPY, intensity=0.7)
 
     if signals.has_ellipsis:
-        return EmotionMapping(emotion=Emotion.SAD, intensity=0.4)
+        return EmotionMapping(emotion=Emotion.SAD, intensity=0.2)
 
     return EmotionMapping(emotion=Emotion.NEUTRAL, intensity=0.0)

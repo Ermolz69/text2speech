@@ -65,5 +65,5 @@ Frontend не звертається напряму до Python сервісів
 ## Поточні обмеження frontend
 
 - `voiceId` зараз вибирається з локального статичного списку
-- `audioUrl` приходить як placeholder від поточного adapter implementation
+- `audioUrl` now comes back as a stable gateway-owned URL under `/api/audio/<file>.wav`
 - web не викликає `/api/tts/debug` окремо, але gateway endpoint існує для QA/debug flows

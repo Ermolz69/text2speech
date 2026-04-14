@@ -7,63 +7,30 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-
-function Get-Json($Url) {
-  return Invoke-RestMethod -Method Get -Uri $Url
-}
-
-function Post-Json($Url, $Body) {
-  return Invoke-RestMethod -Method Post -Uri $Url -ContentType 'application/json' -Body ($Body | ConvertTo-Json -Depth 10 -Compress)
-}
-
-function Get-ReadyJson($Url) {
-  try {
-    return Invoke-RestMethod -Method Get -Uri $Url
-  } catch {
-    if ($_.Exception.Response -and $_.Exception.Response.StatusCode.value__ -eq 503) {
-      $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
-      try {
-        return ($reader.ReadToEnd() | ConvertFrom-Json)
-      } finally {
-        $reader.Dispose()
-      }
-    }
-    throw
-  }
-}
+Import-Module (Join-Path $PSScriptRoot 'modules/AudioRegressionTools.psm1') -Force
 
 Write-Host 'Checking gateway health...'
-$gatewayHealth = Get-Json "$GatewayUrl/health"
-if ($gatewayHealth.service -ne 'gateway') {
-  throw "Gateway health returned unexpected payload: $($gatewayHealth | ConvertTo-Json -Depth 5)"
-}
+$gatewayHealth = Invoke-JsonGet "$GatewayUrl/health"
+Assert-ServiceIdentity -Payload $gatewayHealth -ExpectedService 'gateway' -Context 'Gateway health'
 
 Write-Host 'Checking web proxy health...'
-$webHealth = Get-Json "$WebUrl/health"
-if ($webHealth.service -ne 'gateway') {
-  throw "Web proxy health returned unexpected payload: $($webHealth | ConvertTo-Json -Depth 5)"
-}
+$webHealth = Invoke-JsonGet "$WebUrl/health"
+Assert-ServiceIdentity -Payload $webHealth -ExpectedService 'gateway' -Context 'Web proxy health'
 
 Write-Host 'Checking text-analysis health...'
-$textHealth = Get-Json "$TextAnalysisUrl/health"
-if ($textHealth.service -ne 'text-analysis') {
-  throw "Text-analysis health returned unexpected payload: $($textHealth | ConvertTo-Json -Depth 5)"
-}
+$textHealth = Invoke-JsonGet "$TextAnalysisUrl/health"
+Assert-ServiceIdentity -Payload $textHealth -ExpectedService 'text-analysis' -Context 'Text-analysis health'
 
 Write-Host 'Checking tts-adapter health...'
-$ttsHealth = Get-Json "$TtsAdapterUrl/health"
-if ($ttsHealth.service -ne 'tts-adapter') {
-  throw "TTS adapter health returned unexpected payload: $($ttsHealth | ConvertTo-Json -Depth 5)"
-}
+$ttsHealth = Invoke-JsonGet "$TtsAdapterUrl/health"
+Assert-ServiceIdentity -Payload $ttsHealth -ExpectedService 'tts-adapter' -Context 'TTS adapter health'
 
 Write-Host 'Checking analyze flow through web proxy...'
-$analyzeResponse = Post-Json "$WebUrl/api/analyze" @{ text = 'Hello! :) How are you?' }
-if (-not $analyzeResponse.segments -or $analyzeResponse.segments.Count -lt 1) {
-  throw 'Analyze response did not contain segments.'
-}
+$analyzeResponse = Invoke-JsonPost "$WebUrl/api/analyze" @{ text = 'Hello! :) How are you?' }
+Assert-AnalyzeResponse -Payload $analyzeResponse
 
 Write-Host 'Checking tts-adapter readiness...'
-$readyResponse = Get-ReadyJson "$TtsAdapterUrl/health/ready"
+$readyResponse = Get-ReadinessJson "$TtsAdapterUrl/health/ready"
 
 if ($RequireSynthesisReady -and -not $readyResponse.ready) {
   throw "TTS adapter is not synthesis-ready: $($readyResponse | ConvertTo-Json -Depth 10)"

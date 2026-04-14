@@ -1,5 +1,4 @@
-
-from fastapi.testclient import TestClient
+﻿from fastapi.testclient import TestClient
 
 from app.main import app
 from app.models.segment import SegmentMetadata
@@ -14,6 +13,7 @@ def test_health_reports_readiness_from_provider() -> None:
             return {
                 "ready": True,
                 "binary_available": True,
+                "ffmpeg_available": True,
                 "model_configured": True,
                 "model_exists": True,
             }
@@ -34,18 +34,22 @@ def test_health_reports_readiness_from_provider() -> None:
         del app.state.synthesis_provider
 
     assert response.status_code == 200
+    assert response.headers["x-request-id"]
     assert response.json() == {
         "status": "ok",
         "service": "tts-adapter",
         "readiness": {
             "ready": True,
             "binary_available": True,
+            "ffmpeg_available": True,
             "model_configured": True,
             "model_exists": True,
         },
     }
     assert ready_response.status_code == 200
+    assert ready_response.headers["x-request-id"]
     assert ready_response.json()["ready"] is True
+
 
 
 def test_health_ready_returns_503_when_provider_is_not_ready() -> None:
@@ -54,28 +58,30 @@ def test_health_ready_returns_503_when_provider_is_not_ready() -> None:
             return {
                 "ready": False,
                 "binary_available": True,
+                "ffmpeg_available": False,
                 "model_configured": True,
                 "model_exists": False,
             }
 
         def synthesize(self, segments: list[SegmentMetadata]) -> SynthesisResult:
-            raise AssertionError('synthesize should not be called')
+            raise AssertionError("synthesize should not be called")
 
     app.state.synthesis_provider = NotReadyProvider()
 
     try:
-        response = client.get('/health')
-        ready_response = client.get('/health/ready')
+        response = client.get("/health")
+        ready_response = client.get("/health/ready")
     finally:
         del app.state.synthesis_provider
 
     assert response.status_code == 200
-    assert response.json()['status'] == 'degraded'
+    assert response.json()["status"] == "degraded"
     assert ready_response.status_code == 503
-    assert ready_response.json()['ready'] is False
+    assert ready_response.json()["ready"] is False
 
 
-def test_synthesize_accepts_segment_structure() -> None:
+
+def test_synthesize_accepts_shared_request_structure() -> None:
     class StubProvider:
         def synthesize(self, segments: list[SegmentMetadata]) -> SynthesisResult:
             return SynthesisResult(
@@ -86,31 +92,42 @@ def test_synthesize_accepts_segment_structure() -> None:
 
     app.state.synthesis_provider = StubProvider()
     payload = {
-        "segments": [
-            {
-                "text": "Hello! :)",
-                "emotion": "happy",
-                "intensity": 0.8,
-                "pause_ms": 250,
-                "rate": 1.1,
-                "pitch_hint": 2.0,
-                "cues": ["emoji:positive", "punctuation:exclamation"],
-            }
-        ]
+        "text": "Hello! :)",
+        "voiceId": "voice-1",
+        "metadata": {
+            "format": "wav",
+            "segments": [
+                {
+                    "text": "Hello! :)",
+                    "emotion": "joy",
+                    "intensity": 2,
+                    "emoji": ["positive"],
+                    "punctuation": ["exclamation"],
+                    "pauseAfterMs": 250,
+                    "rate": 1.18,
+                    "pitchHint": 3.0,
+                }
+            ],
+        },
     }
 
     try:
-        response = client.post("/synthesize", json=payload)
+        response = client.post(
+            "/synthesize",
+            json=payload,
+            headers={"X-Request-Id": "req-tts-123"},
+        )
     finally:
         del app.state.synthesis_provider
 
     assert response.status_code == 200
+    assert response.headers["x-request-id"] == "req-tts-123"
     body = response.json()
     assert body == {
-        "audio_url": "/stub.wav",
-        "received_segments": 1,
-        "total_pause_ms": 250,
+        "audioUrl": "/stub.wav",
+        "metadata": payload["metadata"],
     }
+
 
 
 def test_synthesize_delegates_to_configured_provider() -> None:
@@ -129,17 +146,20 @@ def test_synthesize_delegates_to_configured_provider() -> None:
     provider = StubProvider()
     app.state.synthesis_provider = provider
     payload = {
-        "segments": [
-            {
-                "text": "Hello",
-                "emotion": "neutral",
-                "intensity": 0.0,
-                "pause_ms": 10,
-                "rate": 1.0,
-                "pitch_hint": 0.0,
-                "cues": [],
-            }
-        ]
+        "text": "Hello",
+        "voiceId": "voice-1",
+        "metadata": {
+            "segments": [
+                {
+                    "text": "Hello",
+                    "emotion": "neutral",
+                    "intensity": 0,
+                    "pauseAfterMs": 10,
+                    "rate": 1.0,
+                    "pitchHint": 0.0,
+                }
+            ]
+        },
     }
 
     try:
@@ -149,48 +169,66 @@ def test_synthesize_delegates_to_configured_provider() -> None:
 
     assert response.status_code == 200
     assert response.json() == {
-        "audio_url": "/stub.wav",
-        "received_segments": 1,
-        "total_pause_ms": 999,
+        "audioUrl": "/stub.wav",
+        "metadata": payload["metadata"],
     }
     assert len(provider.calls) == 1
     assert provider.calls[0][0].text == "Hello"
+    assert provider.calls[0][0].pause_ms == 10
+    assert provider.calls[0][0].intensity == 0.0
+
 
 
 def test_synthesize_validation_errors_use_shared_envelope() -> None:
-    response = client.post("/synthesize", json={})
+    response = client.post(
+        "/synthesize",
+        json={},
+        headers={"X-Request-Id": "req-tts-validation"},
+    )
 
     assert response.status_code == 422
-    assert response.json() == {
-        "error": {
-            "code": "validation_error",
-            "message": "Request validation failed",
-            "status": 422,
-            "path": "/synthesize",
-            "details": [
-                {
-                    "location": "body.segments",
-                    "message": "Field required",
-                    "code": "missing",
-                }
-            ],
-        }
-    }
+    assert response.headers["x-request-id"] == "req-tts-validation"
+    body = response.json()
+    assert body["error"]["code"] == "validation_error"
+    assert body["error"]["path"] == "/synthesize"
+    assert {detail["location"] for detail in body["error"]["details"]} >= {"body.text", "body.voiceId"}
+
+
+
+def test_synthesize_rejects_missing_metadata_segments() -> None:
+    response = client.post(
+        "/synthesize",
+        json={
+            "text": "Hello",
+            "voiceId": "voice-1",
+            "metadata": {"format": "wav"},
+        },
+    )
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["error"]["code"] == "validation_error"
+    assert body["error"]["path"] == "/synthesize"
+    assert "metadata.segments are required" in body["error"]["details"][0]["message"]
+
 
 
 def test_synthesize_runtime_errors_use_shared_envelope() -> None:
     payload = {
-        "segments": [
-            {
-                "text": "Hello",
-                "emotion": "neutral",
-                "intensity": 0.0,
-                "pause_ms": 0,
-                "rate": 1.0,
-                "pitch_hint": 0.0,
-                "cues": [],
-            }
-        ]
+        "text": "Hello",
+        "voiceId": "voice-1",
+        "metadata": {
+            "segments": [
+                {
+                    "text": "Hello",
+                    "emotion": "neutral",
+                    "intensity": 0,
+                    "pauseAfterMs": 0,
+                    "rate": 1.0,
+                    "pitchHint": 0.0,
+                }
+            ]
+        },
     }
 
     response = client.post(
@@ -200,6 +238,7 @@ def test_synthesize_runtime_errors_use_shared_envelope() -> None:
     )
 
     assert response.status_code == 500
+    assert response.headers["x-request-id"]
     assert response.json() == {
         "error": {
             "code": "internal_error",
@@ -210,20 +249,24 @@ def test_synthesize_runtime_errors_use_shared_envelope() -> None:
     }
 
 
+
 def test_synthesize_rejects_unknown_fields_with_shared_envelope() -> None:
     payload = {
-        "segments": [
-            {
-                "text": "Hello",
-                "emotion": "neutral",
-                "intensity": 0.0,
-                "pause_ms": 0,
-                "rate": 1.0,
-                "pitch_hint": 0.0,
-                "cues": [],
-                "unknown_field": "boom",
-            }
-        ]
+        "text": "Hello",
+        "voiceId": "voice-1",
+        "metadata": {
+            "segments": [
+                {
+                    "text": "Hello",
+                    "emotion": "neutral",
+                    "intensity": 0,
+                    "pauseAfterMs": 0,
+                    "rate": 1.0,
+                    "pitchHint": 0.0,
+                    "unknownField": "boom",
+                }
+            ]
+        },
     }
 
     response = client.post("/synthesize", json=payload)
@@ -232,4 +275,4 @@ def test_synthesize_rejects_unknown_fields_with_shared_envelope() -> None:
     body = response.json()
     assert body["error"]["code"] == "validation_error"
     assert body["error"]["path"] == "/synthesize"
-    assert body["error"]["details"][0]["location"] == "body.segments.0.unknown_field"
+    assert body["error"]["details"][0]["location"] == "body.metadata.segments.0.unknownField"

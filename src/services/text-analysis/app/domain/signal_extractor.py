@@ -2,7 +2,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-POSITIVE_EMOJIS = (":)", ":D", "=)", "^^")
+POSITIVE_EMOTICONS = (":)", ":D", "=)", "^^")
+POSITIVE_UNICODE_EMOJIS = (
+    "\U0001F60A",
+    "\U0001F604",
+    "\U0001F603",
+    "\U0001F642",
+    "\U0001F601",
+    "\U0001F606",
+    "\U0001F609",
+    "\U0001F60D",
+    "\U0001F970",
+)
 
 
 @dataclass(frozen=True)
@@ -22,7 +33,7 @@ def extract_signals(text: str) -> ExtractedSignals:
     has_exclamation = "!" in text
     has_question = "?" in text
     has_ellipsis = "..." in text
-    has_positive_emoji = any(emoji in text for emoji in POSITIVE_EMOJIS)
+    has_positive_emoji = any(emoji in text for emoji in (*POSITIVE_EMOTICONS, *POSITIVE_UNICODE_EMOJIS))
     has_mixed_punctuation = "?!" in text or "!?" in text
     has_repeated_exclamation = "!!" in text
     has_repeated_question = "??" in text

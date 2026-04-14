@@ -54,7 +54,8 @@ def test_map_emotion_returns_sad_for_ellipsis() -> None:
     )
 
     assert mapping.emotion is Emotion.SAD
-    assert mapping.intensity == 0.4
+    assert mapping.intensity == 0.2
+
 
 
 def test_map_emotion_prefers_happy_over_sad_when_both_signals_exist() -> None:

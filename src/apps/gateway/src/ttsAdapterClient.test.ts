@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+﻿import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   createTtsAdapterClient,
@@ -16,13 +16,26 @@ describe("ttsAdapterClient", () => {
     vi.useRealTimers();
   });
 
-  it("maps a successful upstream response into the shared synthesize DTO", async () => {
+  it("passes through a shared synthesize request and response", async () => {
     const fetchFn = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
-          audio_url: "/placeholder.wav",
-          received_segments: 1,
-          total_pause_ms: 250,
+          audioUrl: "/audio/placeholder.wav",
+          metadata: {
+            format: "wav",
+            segments: [
+              {
+                text: "Hello! :)",
+                emotion: "joy",
+                intensity: 2,
+                emoji: ["positive"],
+                punctuation: ["exclamation"],
+                pauseAfterMs: 250,
+                rate: 1.1,
+                pitchHint: 2.0,
+              },
+            ],
+          },
         }),
         {
           status: 200,
@@ -42,7 +55,7 @@ describe("ttsAdapterClient", () => {
           {
             text: "Hello! :)",
             emotion: "joy" as const,
-            intensity: 3 as const,
+            intensity: 2 as const,
             emoji: ["positive"],
             punctuation: ["exclamation"],
             pauseAfterMs: 250,
@@ -59,8 +72,8 @@ describe("ttsAdapterClient", () => {
       fetchFn,
     });
 
-    await expect(client.synthesize(payload)).resolves.toEqual({
-      audioUrl: "/placeholder.wav",
+    await expect(client.synthesize(payload, { requestId: "req-456" })).resolves.toEqual({
+      audioUrl: "/audio/placeholder.wav",
       metadata: payload.metadata,
     });
 
@@ -70,20 +83,44 @@ describe("ttsAdapterClient", () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "X-Request-Id": "req-456",
         },
-        body: JSON.stringify({
-          segments: [
-            {
-              text: "Hello! :)",
-              emotion: "happy",
-              intensity: 1,
-              pause_ms: 250,
-              rate: 1.1,
-              pitch_hint: 2.0,
-              cues: ["emoji:positive", "punctuation:exclamation"],
-            },
-          ],
-        }),
+        body: JSON.stringify(payload),
+      })
+    );
+  });
+
+  it("fetches adapter audio and preserves response headers", async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      new Response(new Uint8Array([1, 2, 3]), {
+        status: 200,
+        headers: {
+          "Content-Type": "audio/wav",
+          "Content-Disposition": 'inline; filename="sample.wav"',
+        },
+      })
+    );
+
+    const client = createTtsAdapterClient({
+      baseUrl: "http://tts-adapter:8002",
+      timeoutMs: 3000,
+      fetchFn,
+    });
+
+    await expect(client.fetchAudio("sample.wav", { requestId: "req-audio" })).resolves.toEqual({
+      body: Buffer.from([1, 2, 3]),
+      contentType: "audio/wav",
+      contentDisposition: 'inline; filename="sample.wav"',
+    });
+
+    expect(fetchFn).toHaveBeenCalledWith(
+      "http://tts-adapter:8002/audio/sample.wav",
+      expect.objectContaining({
+        method: "GET",
+        headers: {
+          "X-Request-Id": "req-audio",
+        },
+        signal: expect.any(AbortSignal),
       })
     );
   });
@@ -148,6 +185,23 @@ describe("ttsAdapterClient", () => {
     });
   });
 
+  it("surfaces non-ok audio responses cleanly", async () => {
+    const fetchFn = vi.fn().mockResolvedValue(new Response("missing", { status: 404 }));
+
+    const client = createTtsAdapterClient({
+      baseUrl: "http://tts-adapter:8002",
+      timeoutMs: 3000,
+      fetchFn,
+    });
+
+    await expect(client.fetchAudio("missing.wav")).rejects.toMatchObject({
+      name: "TtsAdapterClientError",
+      kind: "upstream",
+      reason: "response_status",
+      statusCode: 404,
+    });
+  });
+
   it("surfaces malformed upstream payloads cleanly", async () => {
     const fetchFn = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ invalid: true }), {
@@ -207,7 +261,7 @@ describe("ttsAdapterClient", () => {
 });
 
 describe("ttsAdapterClient mappers", () => {
-  it("translates shared segments into the adapter request shape", () => {
+  it("passes through the shared synthesis request shape", () => {
     expect(
       mapSynthesizeRequest({
         text: "Hello",
@@ -228,33 +282,36 @@ describe("ttsAdapterClient mappers", () => {
         },
       })
     ).toEqual({
-      segments: [
-        {
-          text: "Hello",
-          emotion: "excited",
-          intensity: 2 / 3,
-          pause_ms: 150,
-          rate: 0.9,
-          pitch_hint: -1.0,
-          cues: ["emoji:smile", "punctuation:question"],
-        },
-      ],
+      text: "Hello",
+      voiceId: "voice-1",
+      metadata: {
+        segments: [
+          {
+            text: "Hello",
+            emotion: "playful",
+            intensity: 2,
+            emoji: ["smile"],
+            punctuation: ["question"],
+            pauseAfterMs: 150,
+            rate: 0.9,
+            pitchHint: -1.0,
+          },
+        ],
+      },
     });
   });
 
-  it("translates the adapter response into the shared synthesize DTO", () => {
+  it("passes through the shared synthesis response shape", () => {
     expect(
-      mapSynthesizeResponse(
-        {
-          audio_url: "/voice.wav",
-        },
-        {
+      mapSynthesizeResponse({
+        audioUrl: "/audio/voice.wav",
+        metadata: {
           segments: [{ text: "Hello", emotion: "neutral", intensity: 0 }],
           format: "wav",
-        }
-      )
+        },
+      })
     ).toEqual({
-      audioUrl: "/voice.wav",
+      audioUrl: "/audio/voice.wav",
       metadata: {
         segments: [{ text: "Hello", emotion: "neutral", intensity: 0 }],
         format: "wav",

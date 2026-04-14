@@ -6,6 +6,17 @@ on:
   workflow_dispatch:
 
 jobs:
+  workflow_lint:
+    name: Workflow | validate GitHub Actions config
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run actionlint
+        uses: raven-actions/actionlint@v2
+
   web:
     name: Web | lint + typecheck + build + coverage
     runs-on: ubuntu-latest

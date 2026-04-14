@@ -1,4 +1,4 @@
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import type {
   AnalyzeRequestDto,
   AnalyzeResponseDto,
@@ -14,16 +14,17 @@ import {
   getTextAnalysisClientConfig,
   TextAnalysisClientError,
   type TextAnalysisClient,
-} from "./textAnalysisClient";
+} from "./textAnalysisClient.js";
 import {
   createTtsAdapterClient,
   getTtsAdapterClientConfig,
   TtsAdapterClientError,
   type TtsAdapterClient,
-} from "./ttsAdapterClient";
+} from "./ttsAdapterClient.js";
 
 const port = Number(process.env.PORT_GATEWAY ?? 4000);
 const nonBlankStringPattern = "\\S";
+const requestIdHeaderName = "X-Request-Id";
 
 const emotionLabels: EmotionLabel[] = [
   "neutral",
@@ -107,6 +108,47 @@ const synthesizeBodySchema = createBodySchema(["text", "voiceId"], {
 
 function getRequestPath(url: string): string {
   return url.split("?")[0] || "/";
+}
+
+function getRequestId(request: FastifyRequest): string {
+  const incoming = request.headers["x-request-id"];
+  if (typeof incoming === "string" && incoming.trim().length > 0) {
+    return incoming.trim();
+  }
+  return request.id;
+}
+
+function setRequestIdHeader(reply: FastifyReply, requestId: string): void {
+  void reply.header(requestIdHeaderName, requestId);
+}
+
+function logStructuredEvent(
+  request: FastifyRequest,
+  input: {
+    event: string;
+    status?: number;
+    upstream?: string;
+    error_code?: string;
+    segment_count?: number;
+    audio_url?: string;
+    filename?: string;
+    duration_ms?: number;
+  }
+): void {
+  request.log.info({
+    service: "gateway",
+    request_id: getRequestId(request),
+    method: request.method,
+    path: getRequestPath(request.url),
+    event: input.event,
+    ...(typeof input.status === "number" ? { status: input.status } : {}),
+    ...(typeof input.duration_ms === "number" ? { duration_ms: input.duration_ms } : {}),
+    ...(input.upstream ? { upstream: input.upstream } : {}),
+    ...(input.error_code ? { error_code: input.error_code } : {}),
+    ...(typeof input.segment_count === "number" ? { segment_count: input.segment_count } : {}),
+    ...(input.audio_url ? { audio_url: input.audio_url } : {}),
+    ...(input.filename ? { filename: input.filename } : {}),
+  });
 }
 
 function getValidationLocation(error: ValidationErrorShape): string {
@@ -232,6 +274,19 @@ function buildSynthesizePipelineRequest(
   };
 }
 
+function extractAudioFilename(audioUrl: string): string | null {
+  const match = /^\/audio\/([^/?#]+)$/.exec(audioUrl);
+  return match?.[1] ?? null;
+}
+
+function toGatewayAudioUrl(audioUrl: string): string {
+  const filename = extractAudioFilename(audioUrl);
+  if (!filename) {
+    throw new Error(`Unexpected adapter audio URL: ${audioUrl}`);
+  }
+  return `/api/audio/${filename}`;
+}
+
 export function createApp(dependencies: AppDependencies = {}): FastifyInstance {
   const app = Fastify({
     logger: true,
@@ -246,8 +301,30 @@ export function createApp(dependencies: AppDependencies = {}): FastifyInstance {
   const ttsAdapterClient =
     dependencies.ttsAdapterClient ?? createTtsAdapterClient(getTtsAdapterClientConfig());
 
+  app.addHook("onRequest", async (request, reply) => {
+    const requestId = getRequestId(request);
+    setRequestIdHeader(reply, requestId);
+    logStructuredEvent(request, { event: "request_started" });
+  });
+
+  app.addHook("onResponse", async (request, reply) => {
+    const durationMs = Number(reply.elapsedTime.toFixed(2));
+    logStructuredEvent(request, {
+      event: "request_finished",
+      status: reply.statusCode,
+      duration_ms: durationMs,
+    });
+  });
+
   app.setErrorHandler((error, request, reply) => {
+    setRequestIdHeader(reply, getRequestId(request));
+
     if (error.validation) {
+      logStructuredEvent(request, {
+        event: "validation_error",
+        status: 422,
+        error_code: "validation_error",
+      });
       const response = createApiErrorResponse({
         code: "validation_error",
         message: "Request validation failed",
@@ -260,7 +337,15 @@ export function createApp(dependencies: AppDependencies = {}): FastifyInstance {
       return;
     }
 
-    request.log.error(error);
+    request.log.error({
+      service: "gateway",
+      request_id: getRequestId(request),
+      method: request.method,
+      path: getRequestPath(request.url),
+      event: "runtime_error",
+      error_code: "internal_error",
+      err: error,
+    });
 
     const response = createApiErrorResponse({
       code: "internal_error",
@@ -282,10 +367,27 @@ export function createApp(dependencies: AppDependencies = {}): FastifyInstance {
       },
     },
     async (request, reply) => {
+      const requestId = getRequestId(request);
       try {
-        return await textAnalysisClient.analyze(request.body);
+        logStructuredEvent(request, {
+          event: "upstream_request_started",
+          upstream: "text-analysis",
+        });
+        const response = await textAnalysisClient.analyze(request.body, { requestId });
+        logStructuredEvent(request, {
+          event: "analyze_completed",
+          status: 200,
+          segment_count: response.segments.length,
+        });
+        return response;
       } catch (error) {
         if (error instanceof TextAnalysisClientError) {
+          logStructuredEvent(request, {
+            event: "upstream_request_failed",
+            upstream: "text-analysis",
+            status: error.kind === "timeout" ? 504 : 502,
+            error_code: error.kind === "timeout" ? "upstream_timeout" : "upstream_error",
+          });
           const mapped = mapUpstreamClientError(
             error,
             getRequestPath(request.url),
@@ -307,11 +409,28 @@ export function createApp(dependencies: AppDependencies = {}): FastifyInstance {
       },
     },
     async (request, reply) => {
+      const requestId = getRequestId(request);
       try {
-        return await textAnalysisClient.analyze(request.body);
+        logStructuredEvent(request, {
+          event: "upstream_request_started",
+          upstream: "text-analysis",
+        });
+        const response = await textAnalysisClient.analyze(request.body, { requestId });
+        logStructuredEvent(request, {
+          event: "tts_debug_completed",
+          status: 200,
+          segment_count: response.segments.length,
+        });
+        return response;
       } catch (error) {
         if (error instanceof TextAnalysisClientError) {
           logTextAnalysisClientError(error, request.log);
+          logStructuredEvent(request, {
+            event: "upstream_request_failed",
+            upstream: "text-analysis",
+            status: error.kind === "timeout" ? 504 : 502,
+            error_code: error.kind === "timeout" ? "upstream_timeout" : "upstream_error",
+          });
           const mapped = mapUpstreamClientError(
             error,
             getRequestPath(request.url),
@@ -333,13 +452,32 @@ export function createApp(dependencies: AppDependencies = {}): FastifyInstance {
       },
     },
     async (request, reply) => {
+      const requestId = getRequestId(request);
       let analyzeResponse: AnalyzeResponseDto;
 
       try {
-        analyzeResponse = await textAnalysisClient.analyze({ text: request.body.text });
+        logStructuredEvent(request, {
+          event: "upstream_request_started",
+          upstream: "text-analysis",
+        });
+        analyzeResponse = await textAnalysisClient.analyze(
+          { text: request.body.text },
+          { requestId }
+        );
+        logStructuredEvent(request, {
+          event: "analyze_completed",
+          status: 200,
+          segment_count: analyzeResponse.segments.length,
+        });
       } catch (error) {
         if (error instanceof TextAnalysisClientError) {
           logTextAnalysisClientError(error, request.log);
+          logStructuredEvent(request, {
+            event: "upstream_request_failed",
+            upstream: "text-analysis",
+            status: error.kind === "timeout" ? 504 : 502,
+            error_code: error.kind === "timeout" ? "upstream_timeout" : "upstream_error",
+          });
           const mapped = mapUpstreamClientError(
             error,
             getRequestPath(request.url),
@@ -353,10 +491,31 @@ export function createApp(dependencies: AppDependencies = {}): FastifyInstance {
 
       try {
         const synthesizeRequest = buildSynthesizePipelineRequest(request.body, analyzeResponse);
-        return await ttsAdapterClient.synthesize(synthesizeRequest);
+        logStructuredEvent(request, { event: "upstream_request_started", upstream: "tts-adapter" });
+        const synthesisResponse = await ttsAdapterClient.synthesize(synthesizeRequest, {
+          requestId,
+        });
+        const gatewayAudioUrl = toGatewayAudioUrl(synthesisResponse.audioUrl);
+        logStructuredEvent(request, {
+          event: "synthesize_completed",
+          status: 200,
+          segment_count: synthesizeRequest.metadata?.segments?.length,
+          audio_url: gatewayAudioUrl,
+          filename: extractAudioFilename(synthesisResponse.audioUrl) ?? undefined,
+        });
+        return {
+          ...synthesisResponse,
+          audioUrl: gatewayAudioUrl,
+        };
       } catch (error) {
         if (error instanceof TtsAdapterClientError) {
           logTtsAdapterClientError(error, request.log);
+          logStructuredEvent(request, {
+            event: "upstream_request_failed",
+            upstream: "tts-adapter",
+            status: error.kind === "timeout" ? 504 : 502,
+            error_code: error.kind === "timeout" ? "upstream_timeout" : "upstream_error",
+          });
           const mapped = mapUpstreamClientError(
             error,
             getRequestPath(request.url),
@@ -369,6 +528,68 @@ export function createApp(dependencies: AppDependencies = {}): FastifyInstance {
       }
     }
   );
+
+  app.get<{ Params: { filename: string } }>("/api/audio/:filename", async (request, reply) => {
+    const requestId = getRequestId(request);
+    try {
+      logStructuredEvent(request, {
+        event: "upstream_request_started",
+        upstream: "tts-adapter",
+        filename: request.params.filename,
+      });
+      const audio = await ttsAdapterClient.fetchAudio(request.params.filename, { requestId });
+
+      if (audio.contentType) {
+        void reply.header("Content-Type", audio.contentType);
+      }
+      if (audio.contentDisposition) {
+        void reply.header("Content-Disposition", audio.contentDisposition);
+      }
+
+      logStructuredEvent(request, {
+        event: "audio_proxy_completed",
+        status: 200,
+        filename: request.params.filename,
+      });
+      return reply.send(audio.body);
+    } catch (error) {
+      if (error instanceof TtsAdapterClientError) {
+        if (error.reason === "response_status" && error.statusCode === 404) {
+          logStructuredEvent(request, {
+            event: "audio_proxy_missing",
+            status: 404,
+            filename: request.params.filename,
+            upstream: "tts-adapter",
+            error_code: "upstream_error",
+          });
+          return reply.status(404).send(
+            createApiErrorResponse({
+              code: "upstream_error",
+              message: "Audio file was not found",
+              status: 404,
+              path: getRequestPath(request.url),
+            })
+          );
+        }
+
+        logStructuredEvent(request, {
+          event: "upstream_request_failed",
+          upstream: "tts-adapter",
+          status: error.kind === "timeout" ? 504 : 502,
+          filename: request.params.filename,
+          error_code: error.kind === "timeout" ? "upstream_timeout" : "upstream_error",
+        });
+        const mapped = mapUpstreamClientError(
+          error,
+          getRequestPath(request.url),
+          "TTS adapter service"
+        );
+        return reply.status(mapped.status).send(mapped.response);
+      }
+
+      throw error;
+    }
+  });
 
   return app;
 }

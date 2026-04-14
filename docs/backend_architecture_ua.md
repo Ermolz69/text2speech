@@ -1,116 +1,98 @@
-# Backend Architecture
+﻿# Backend Architecture
 
-## Поточна схема
+## Current topology
 
-Система складається з трьох backend-компонентів:
+The backend consists of three main components:
 
-- `gateway` (`src/apps/gateway`) — єдиний публічний HTTP entrypoint для web-клієнта
-- `text-analysis` (`src/services/text-analysis`) — FastAPI сервіс сегментації, cue extraction, emotion mapping і prosody planning
-- `tts-adapter` (`src/services/tts-adapter`) — FastAPI сервіс синтезу з provider boundary
+- `gateway` (`src/apps/gateway`) as the only public HTTP entrypoint for the web app
+- `text-analysis` (`src/services/text-analysis`) as the FastAPI service for segmentation, cue extraction, emotion mapping, and prosody planning
+- `tts-adapter` (`src/services/tts-adapter`) as the FastAPI synthesis service with a provider boundary
 
-Поточний запитний ланцюжок:
+Current request flow:
 
 ```text
 web -> gateway -> text-analysis -> gateway -> tts-adapter
 ```
 
-## Відповідальність gateway
+## Gateway responsibility
 
 Gateway:
 
-- приймає публічні запити `/api/analyze`, `/api/tts/debug`, `/api/tts`
-- валідовує вхідні payload-и через Fastify schema
-- нормалізує upstream timeout/error responses у спільний error envelope
-- мапить внутрішній Python response у public DTO для web
-- запускає synthesis pipeline для `/api/tts`
+- accepts public requests on `/api/analyze`, `/api/tts/debug`, `/api/tts`, and `/api/audio/:filename`
+- validates public payloads through Fastify schemas
+- normalizes upstream timeout and failure responses into the shared error envelope
+- orchestrates the synthesis pipeline
+- exposes a stable public audio URL under `/api/audio/<file>.wav`
 
-Поточні публічні endpoint-и gateway:
+## Text-analysis responsibility
 
-- `GET /health`
-- `POST /api/analyze`
-- `POST /api/tts/debug`
-- `POST /api/tts`
+Text-analysis:
 
-## Відповідальність text-analysis
+- accepts `POST /analyze`
+- normalizes text
+- splits text into segments
+- extracts internal cue signals (`emoji:*`, `punctuation:*`)
+- maps the internal emotion set (`neutral`, `happy`, `sad`)
+- computes prosody hints
+- maps the internal result into the shared camelCase HTTP contract
 
-Text-analysis зараз:
-
-- приймає `POST /analyze`
-- нормалізує текст
-- ділить текст на сегменти
-- витягує cue-сигнали (`emoji:*`, `punctuation:*`)
-- мапить внутрішню емоцію (`neutral`, `happy`, `sad`)
-- рахує `pause_ms`, `rate`, `pitch_hint`
-
-Внутрішній response сервісу — segment list зі snake_case полями:
+Public response fields from `/analyze` now match the shared DTO contract:
 
 - `text`
 - `emotion`
 - `intensity`
-- `pause_ms`
-- `rate`
-- `pitch_hint`
-- `cues`
+- optional `emoji`
+- optional `punctuation`
+- optional `pauseAfterMs`
+- optional `rate`
+- optional `pitchHint`
 
-## Відповідальність tts-adapter
+Internal fields like `pause_ms`, `pitch_hint`, and raw `cues` remain private to the service.
 
-TTS adapter зараз:
+## TTS adapter responsibility
 
-- приймає `POST /synthesize`
-- валідує сегменти synthesis payload-а
-- делегує синтез через provider interface
-- за замовчуванням використовує `PiperSynthesisProvider`
-- повертає placeholder synthesis result
+TTS adapter:
 
-Поточний direct response сервісу:
+- accepts `POST /synthesize`
+- validates the shared synthesis request shape directly
+- converts shared metadata segments into internal provider segments
+- delegates synthesis through the provider interface
+- exposes generated files under `/audio/<file>.wav`
+- maps the internal provider result into the shared synthesis response shape
 
-- `audio_url`
-- `received_segments`
-- `total_pause_ms`
+Public success payload from `/synthesize` now matches the shared DTO contract:
 
-## Public vs internal contracts
+- `audioUrl`
+- optional `metadata`
+- optional `metricsUrl`
 
-Є два рівні контракту:
+Internal provider-only fields like `audio_url`, `received_segments`, and `total_pause_ms` do not leak through the public HTTP boundary.
 
-### Публічний gateway-контракт
+## Shared contract model
 
-Використовується web та Postman для `gateway`.
+There is now one public wire contract across gateway, text-analysis, and tts-adapter:
 
-Поточні label-и емоцій у public DTO:
+- camelCase field names
+- shared emotion labels from `src/shared/src/dto.ts`
+- shared error envelope from `src/shared/src/error.ts`
 
-- `neutral`
-- `joy`
-- `playful`
-- `sadness`
-- `anger`
-- `fear`
-- `surprise`
+Gateway still keeps only the transformations that are genuinely gateway-owned:
 
-### Внутрішній Python-контракт
-
-Використовується між gateway та Python сервісами.
-
-Поточні label-и text-analysis:
-
-- `neutral`
-- `happy`
-- `sad`
-
-Gateway має adapter-layer, який мапить внутрішні Python labels у public DTO labels.
+- orchestration
+- stable public audio URL rewriting
+- upstream timeout and failure mapping
 
 ## Error handling
 
-Усі три backend-шари використовують сумісний envelope для validation/runtime помилок.
-
-Типові коди:
+All backend layers use the same error envelope shape:
 
 - `validation_error`
 - `internal_error`
 - `upstream_timeout`
 - `upstream_error`
 
-## Поточні обмеження
+## Current limits
 
-- `tts-adapter` ще не виконує реальний Piper synthesis end-to-end і повертає placeholder audio URL
-- ffmpeg та Piper env vars вже закладені в runtime-конфігурацію, але фактичний synthesis pipeline ще мінімальний
-- public shared DTO історично ширший за поточний внутрішній emotion set text-analysis
+- internal Python domain models still use service-specific representations where needed
+- the alignment in this iteration is specifically at the public HTTP boundary
+- long-term provider metrics remain optional and are not yet populated in the shared synthesis response
