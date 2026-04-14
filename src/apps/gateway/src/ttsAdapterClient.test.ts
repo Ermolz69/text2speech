@@ -303,19 +303,13 @@ describe("ttsAdapterClient mappers", () => {
 
   it("passes through the shared synthesis response shape", () => {
     expect(
-      mapSynthesizeResponse(
-        {
-          audioUrl: "/audio/voice.wav",
-          metadata: {
-            segments: [{ text: "Hello", emotion: "neutral", intensity: 0 }],
-            format: "wav",
-          },
-        },
-        {
+      mapSynthesizeResponse({
+        audioUrl: "/audio/voice.wav",
+        metadata: {
           segments: [{ text: "Hello", emotion: "neutral", intensity: 0 }],
           format: "wav",
-        }
-      )
+        },
+      })
     ).toEqual({
       audioUrl: "/audio/voice.wav",
       metadata: {
