@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import logging
@@ -10,8 +10,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app.domain import analyze_text
+from app.http.contracts import AnalyzeRequestDto, AnalyzeResponseDto, to_analyze_response_dto
 from app.http.errors import create_api_error_response, validation_error_details
-from app.models.segment import AnalyzeRequest, AnalyzeResponse
 
 app = FastAPI(title="Text Analysis Service")
 request_id_header_name = "X-Request-Id"
@@ -133,12 +133,12 @@ def health(request: Request) -> dict:
     return {"status": "ok", "service": "text-analysis"}
 
 
-@app.post("/analyze", response_model=AnalyzeResponse)
-def analyze(payload: AnalyzeRequest, request: Request) -> AnalyzeResponse:
+@app.post("/analyze", response_model=AnalyzeResponseDto, response_model_exclude_none=True)
+def analyze(payload: AnalyzeRequestDto, request: Request) -> AnalyzeResponseDto:
     if request.headers.get("x-force-error") == "1":
         raise RuntimeError("Forced test runtime error")
 
-    response = analyze_text(payload.text)
+    response = to_analyze_response_dto(analyze_text(payload.text))
     log_event(
         request,
         event="analyze_completed",

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import io
 import subprocess
@@ -59,6 +59,7 @@ def test_resolve_audio_output_dir_uses_env_override(monkeypatch, tmp_path: Path)
     assert resolved == tmp_path / "persistent-audio"
 
 
+
 def test_prepare_synthesis_plan_makes_segment_assembly_explicit(tmp_path: Path) -> None:
     provider = PiperSynthesisProvider(
         piper_bin="piper-bin",
@@ -82,6 +83,7 @@ def test_prepare_synthesis_plan_makes_segment_assembly_explicit(tmp_path: Path) 
     assert plan.segments[0].length_scale == 0.8
     assert plan.segments[1].spoken_text == "How are you?"
     assert plan.segments[1].length_scale == 1.25
+
 
 
 def test_piper_provider_invokes_cli_per_segment_and_strips_non_spoken_markers(
@@ -145,6 +147,7 @@ def test_piper_provider_invokes_cli_per_segment_and_strips_non_spoken_markers(
     assert any("concat" in call["command"] for call in ffmpeg_calls)
 
 
+
 def test_synthesize_serves_generated_wav_from_piper_provider(monkeypatch, tmp_path: Path) -> None:
     model_path = tmp_path / "test.onnx"
     model_path.write_bytes(b"model")
@@ -178,17 +181,23 @@ def test_synthesize_serves_generated_wav_from_piper_provider(monkeypatch, tmp_pa
     app.state.synthesis_provider = provider
 
     payload = {
-        "segments": [
-            {
-                "text": f"Hello! {SMILING_FACE}",
-                "emotion": "happy",
-                "intensity": 0.8,
-                "pause_ms": 250,
-                "rate": 1.18,
-                "pitch_hint": 3.0,
-                "cues": ["emoji:positive", "punctuation:exclamation"],
-            }
-        ]
+        "text": f"Hello! {SMILING_FACE}",
+        "voiceId": "voice-1",
+        "metadata": {
+            "format": "wav",
+            "segments": [
+                {
+                    "text": f"Hello! {SMILING_FACE}",
+                    "emotion": "joy",
+                    "intensity": 2,
+                    "emoji": ["positive"],
+                    "punctuation": ["exclamation"],
+                    "pauseAfterMs": 250,
+                    "rate": 1.18,
+                    "pitchHint": 3.0,
+                }
+            ],
+        },
     }
 
     audio_file: Path | None = None
@@ -197,14 +206,13 @@ def test_synthesize_serves_generated_wav_from_piper_provider(monkeypatch, tmp_pa
         assert response.status_code == 200
 
         body = response.json()
-        assert body["received_segments"] == 1
-        assert body["total_pause_ms"] == 250
-        assert body["audio_url"].startswith("/audio/")
+        assert body["audioUrl"].startswith("/audio/")
+        assert body["metadata"] == payload["metadata"]
 
-        audio_file = resolve_audio_output_dir() / Path(body["audio_url"]).name
+        audio_file = resolve_audio_output_dir() / Path(body["audioUrl"]).name
         assert audio_file.exists()
 
-        audio_response = client.get(body["audio_url"])
+        audio_response = client.get(body["audioUrl"])
         assert audio_response.status_code == 200
         with wave.open(io.BytesIO(audio_response.content), "rb") as wav_file:
             assert wav_file.getnchannels() == 1

@@ -1,5 +1,5 @@
-import { z } from "zod";
-import type { AnalyzeSegmentDto, SynthesizeRequestDto, SynthesizeResponseDto } from "shared";
+﻿import { z } from "zod";
+import type { SynthesizeRequestDto, SynthesizeResponseDto } from "shared";
 
 export interface TtsAdapterClient {
   synthesize(
@@ -11,28 +11,59 @@ export interface TtsAdapterClient {
 
 type FetchLike = typeof fetch;
 
-type UpstreamEmotion = "neutral" | "happy" | "sad" | "angry" | "calm" | "excited" | "surprised";
-
-type UpstreamSynthesizeRequest = {
-  segments: Array<{
-    text: string;
-    emotion: UpstreamEmotion;
-    intensity: number;
-    pause_ms: number;
-    rate: number;
-    pitch_hint: number;
-    cues: string[];
-  }>;
-};
-
 export interface UpstreamAudioFile {
   body: Buffer;
   contentType?: string;
   contentDisposition?: string;
 }
 
+const sharedEmotionSchema = z.enum([
+  "neutral",
+  "happy",
+  "sad",
+  "joy",
+  "playful",
+  "sadness",
+  "anger",
+  "fear",
+  "surprise",
+]);
+
+const sharedAnalyzeSegmentSchema = z.object({
+  text: z.string().min(1),
+  emotion: sharedEmotionSchema,
+  intensity: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]),
+  emoji: z.array(z.string()).optional(),
+  punctuation: z.array(z.string()).optional(),
+  pauseAfterMs: z.number().int().nonnegative().optional(),
+  rate: z.number().positive().optional(),
+  pitchHint: z.number().optional(),
+});
+
+const upstreamSynthesizeRequestSchema = z.object({
+  text: z.string().min(1),
+  voiceId: z.string().min(1),
+  metadata: z
+    .object({
+      segments: z.array(sharedAnalyzeSegmentSchema).min(1).optional(),
+      emotion: sharedEmotionSchema.optional(),
+      intensity: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]).optional(),
+      format: z.enum(["wav", "mp3", "ogg"]).optional(),
+    })
+    .optional(),
+});
+
 const upstreamSynthesizeResponseSchema = z.object({
-  audio_url: z.string().min(1),
+  audioUrl: z.string().min(1),
+  metadata: z
+    .object({
+      segments: z.array(sharedAnalyzeSegmentSchema).optional(),
+      emotion: sharedEmotionSchema.optional(),
+      intensity: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]).optional(),
+      format: z.enum(["wav", "mp3", "ogg"]).optional(),
+    })
+    .optional(),
+  metricsUrl: z.string().min(1).optional(),
 });
 
 export type TtsAdapterClientErrorKind = "timeout" | "upstream";
@@ -77,71 +108,18 @@ function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/+$/, "");
 }
 
-function mapEmotion(emotion: AnalyzeSegmentDto["emotion"]): UpstreamEmotion {
-  switch (emotion) {
-    case "joy":
-      return "happy";
-    case "playful":
-      return "excited";
-    case "sadness":
-      return "sad";
-    case "anger":
-      return "angry";
-    case "surprise":
-      return "surprised";
-    case "fear":
-      return "neutral";
-    case "neutral":
-    default:
-      return "neutral";
-  }
-}
+export function mapSynthesizeRequest(payload: SynthesizeRequestDto): SynthesizeRequestDto {
+  const parsed = upstreamSynthesizeRequestSchema.parse(payload);
 
-function mapIntensity(intensity: AnalyzeSegmentDto["intensity"]): number {
-  return intensity / 3;
-}
-
-function toCueValues(values: string[] | undefined, prefix: string): string[] {
-  if (!values || values.length === 0) {
-    return [];
-  }
-
-  return values.map((value) => `${prefix}${value}`);
-}
-
-export function mapSynthesizeRequest(payload: SynthesizeRequestDto): UpstreamSynthesizeRequest {
-  const segments = payload.metadata?.segments;
-
-  if (!segments || segments.length === 0) {
+  if (!parsed.metadata?.segments?.length) {
     throw new Error("Prepared synthesis segments are required");
   }
 
-  return {
-    segments: segments.map((segment) => ({
-      text: segment.text,
-      emotion: mapEmotion(segment.emotion),
-      intensity: mapIntensity(segment.intensity),
-      pause_ms: segment.pauseAfterMs ?? 0,
-      rate: segment.rate ?? 1,
-      pitch_hint: segment.pitchHint ?? 0,
-      cues: [
-        ...toCueValues(segment.emoji, "emoji:"),
-        ...toCueValues(segment.punctuation, "punctuation:"),
-      ],
-    })),
-  };
+  return payload;
 }
 
-export function mapSynthesizeResponse(
-  payload: unknown,
-  requestMetadata: SynthesizeRequestDto["metadata"]
-): SynthesizeResponseDto {
-  const parsed = upstreamSynthesizeResponseSchema.parse(payload);
-
-  return {
-    audioUrl: parsed.audio_url,
-    ...(requestMetadata ? { metadata: requestMetadata } : {}),
-  };
+export function mapSynthesizeResponse(payload: unknown): SynthesizeResponseDto {
+  return upstreamSynthesizeResponseSchema.parse(payload);
 }
 
 export function getTtsAdapterClientConfig(): TtsAdapterClientConfig {
@@ -198,7 +176,7 @@ export function createTtsAdapterClient(config: TtsAdapterClientConfig): TtsAdapt
         }
 
         try {
-          return mapSynthesizeResponse(body, payload.metadata);
+          return mapSynthesizeResponse(body);
         } catch (error) {
           throw new TtsAdapterClientError(
             "upstream",

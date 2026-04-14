@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+﻿import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createTextAnalysisClient, mapAnalyzeResponse } from "./textAnalysisClient";
 
@@ -12,19 +12,20 @@ describe("textAnalysisClient", () => {
     vi.useRealTimers();
   });
 
-  it("maps a successful upstream response once into the shared analyze DTO", async () => {
+  it("passes through a shared analyze response from Python", async () => {
     const fetchFn = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
           segments: [
             {
               text: "Hello! :)",
-              emotion: "happy",
-              intensity: 0.8,
-              pause_ms: 250,
+              emotion: "joy",
+              intensity: 2,
+              emoji: ["positive"],
+              punctuation: ["exclamation"],
+              pauseAfterMs: 250,
               rate: 1.1,
-              pitch_hint: 2,
-              cues: ["emoji:positive", "punctuation:exclamation"],
+              pitchHint: 2,
             },
           ],
         }),
@@ -48,7 +49,7 @@ describe("textAnalysisClient", () => {
         {
           text: "Hello! :)",
           emotion: "joy",
-          intensity: 3,
+          intensity: 2,
           emoji: ["positive"],
           punctuation: ["exclamation"],
           pauseAfterMs: 250,
@@ -57,6 +58,7 @@ describe("textAnalysisClient", () => {
         },
       ],
     });
+
     expect(fetchFn).toHaveBeenCalledWith(
       "http://text-analysis:8001/analyze",
       expect.objectContaining({
@@ -136,18 +138,17 @@ describe("textAnalysisClient", () => {
 });
 
 describe("mapAnalyzeResponse", () => {
-  it("translates the upstream schema into the shared DTO shape", () => {
+  it("passes through the shared analyze DTO shape", () => {
     expect(
       mapAnalyzeResponse({
         segments: [
           {
             text: "Hello",
-            emotion: "calm",
-            intensity: 0.2,
-            pause_ms: 150,
+            emotion: "neutral",
+            intensity: 0,
+            pauseAfterMs: 150,
             rate: 1,
-            pitch_hint: 0,
-            cues: [],
+            pitchHint: 0,
           },
         ],
       })

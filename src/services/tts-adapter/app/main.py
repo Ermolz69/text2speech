@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import logging
@@ -11,7 +11,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.models.segment import SynthesizeRequest
+from app.http.contracts import SynthesizeRequestDto, SynthesizeResponseDto, to_internal_segments
+from app.models.segment import SegmentMetadata
 from app.providers import PiperSynthesisProvider, SynthesisProvider
 from app.providers.piper import DEFAULT_AUDIO_ROUTE, resolve_audio_output_dir
 
@@ -235,25 +236,25 @@ def health_ready(request: Request) -> JSONResponse:
     return response
 
 
-@app.post("/synthesize")
-def synthesize(payload: SynthesizeRequest, request: Request) -> dict:
+@app.post("/synthesize", response_model=SynthesizeResponseDto, response_model_exclude_none=True)
+def synthesize(payload: SynthesizeRequestDto, request: Request) -> SynthesizeResponseDto:
     if request.headers.get("x-force-error") == "1":
         raise RuntimeError("Forced test runtime error")
 
-    result = get_synthesis_provider(request).synthesize(payload.segments)
+    segments: list[SegmentMetadata] = to_internal_segments(payload)
+    result = get_synthesis_provider(request).synthesize(segments)
     filename = result.audio_url.rsplit("/", 1)[-1] if "/" in result.audio_url else result.audio_url
     log_event(
         request,
         event="synthesize_completed",
         status=200,
-        segment_count=len(payload.segments),
+        segment_count=len(segments),
         audio_url=result.audio_url,
         filename=filename,
         total_pause_ms=result.total_pause_ms,
     )
 
-    return {
-        "audio_url": result.audio_url,
-        "received_segments": result.received_segments,
-        "total_pause_ms": result.total_pause_ms,
-    }
+    return SynthesizeResponseDto(
+        audioUrl=result.audio_url,
+        metadata=payload.metadata,
+    )

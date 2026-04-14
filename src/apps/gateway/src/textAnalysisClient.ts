@@ -1,4 +1,4 @@
-import { z } from "zod";
+﻿import { z } from "zod";
 import type { AnalyzeRequestDto, AnalyzeResponseDto, EmotionLabel } from "shared";
 
 export interface TextAnalysisClient {
@@ -10,18 +10,29 @@ export interface TextAnalysisClient {
 
 type FetchLike = typeof fetch;
 
-type UpstreamEmotion = "neutral" | "happy" | "sad" | "angry" | "calm" | "excited" | "surprised";
+const sharedEmotionSchema = z.enum([
+  "neutral",
+  "happy",
+  "sad",
+  "joy",
+  "playful",
+  "sadness",
+  "anger",
+  "fear",
+  "surprise",
+]);
 
 const upstreamAnalyzeResponseSchema = z.object({
   segments: z.array(
     z.object({
       text: z.string().min(1),
-      emotion: z.enum(["neutral", "happy", "sad", "angry", "calm", "excited", "surprised"]),
-      intensity: z.number(),
-      pause_ms: z.number().int().nonnegative(),
-      rate: z.number().positive(),
-      pitch_hint: z.number(),
-      cues: z.array(z.string()),
+      emotion: sharedEmotionSchema,
+      intensity: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]),
+      emoji: z.array(z.string()).optional(),
+      punctuation: z.array(z.string()).optional(),
+      pauseAfterMs: z.number().int().nonnegative().optional(),
+      rate: z.number().positive().optional(),
+      pitchHint: z.number().optional(),
     })
   ),
 });
@@ -50,64 +61,19 @@ function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/+$/, "");
 }
 
-function mapEmotion(emotion: UpstreamEmotion): EmotionLabel {
-  switch (emotion) {
-    case "happy":
-    case "excited":
-      return "joy";
-    case "sad":
-      return "sadness";
-    case "angry":
-      return "anger";
-    case "surprised":
-      return "surprise";
-    case "calm":
-    case "neutral":
-    default:
-      return "neutral";
-  }
-}
-
-function mapIntensity(intensity: number): 0 | 1 | 2 | 3 {
-  const clamped = Math.max(0, Math.min(1, intensity));
-
-  if (clamped < 0.25) {
-    return 0;
-  }
-
-  if (clamped < 0.5) {
-    return 1;
-  }
-
-  if (clamped < 0.75) {
-    return 2;
-  }
-
-  return 3;
-}
-
-function pickCueValues(cues: string[], prefix: string): string[] | undefined {
-  const values = cues
-    .filter((cue) => cue.startsWith(prefix))
-    .map((cue) => cue.slice(prefix.length))
-    .filter(Boolean);
-
-  return values.length > 0 ? values : undefined;
-}
-
 export function mapAnalyzeResponse(payload: unknown): AnalyzeResponseDto {
   const parsed = upstreamAnalyzeResponseSchema.parse(payload);
 
   return {
     segments: parsed.segments.map((segment) => ({
       text: segment.text,
-      emotion: mapEmotion(segment.emotion),
-      intensity: mapIntensity(segment.intensity),
-      emoji: pickCueValues(segment.cues, "emoji:"),
-      punctuation: pickCueValues(segment.cues, "punctuation:"),
-      pauseAfterMs: segment.pause_ms,
-      rate: segment.rate,
-      pitchHint: segment.pitch_hint,
+      emotion: segment.emotion as EmotionLabel,
+      intensity: segment.intensity,
+      ...(segment.emoji ? { emoji: segment.emoji } : {}),
+      ...(segment.punctuation ? { punctuation: segment.punctuation } : {}),
+      ...(typeof segment.pauseAfterMs === "number" ? { pauseAfterMs: segment.pauseAfterMs } : {}),
+      ...(typeof segment.rate === "number" ? { rate: segment.rate } : {}),
+      ...(typeof segment.pitchHint === "number" ? { pitchHint: segment.pitchHint } : {}),
     })),
   };
 }
