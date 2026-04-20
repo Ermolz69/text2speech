@@ -21,6 +21,7 @@ import {
   TtsAdapterClientError,
   type TtsAdapterClient,
 } from "./ttsAdapterClient";
+import { ttsAsyncRoutes } from "./routes/tts-async";
 
 const port = Number(process.env.PORT_GATEWAY ?? 4000);
 const nonBlankStringPattern = "\\S";
@@ -369,6 +370,8 @@ export function createApp(dependencies: AppDependencies = {}): FastifyInstance {
       }
     }
   );
+
+  void app.register(ttsAsyncRoutes);
 
   return app;
 }

@@ -19,6 +19,19 @@ services:
       retries: 6
       start_period: 10s
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${PORT_REDIS:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    volumes:
+      - redis_data:/data
+
   gateway:
     build:
       context: .
@@ -30,10 +43,13 @@ services:
       - TEXT_ANALYSIS_URL=http://text-analysis:8001
       - TTS_ADAPTER_URL=http://tts-adapter:8002
       - TTS_ADAPTER_TIMEOUT_MS=${TTS_ADAPTER_TIMEOUT_MS:-15000}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
     depends_on:
       text-analysis:
         condition: service_healthy
       tts-adapter:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test:
@@ -45,6 +61,26 @@ services:
       timeout: 5s
       retries: 6
       start_period: 15s
+
+  synthesizer-worker:
+    build:
+      context: .
+      dockerfile: ./docker/Dockerfile.gateway
+    command: ["node", "dist/workers/synthesizer.worker.js"]
+    environment:
+      - TEXT_ANALYSIS_URL=http://text-analysis:8001
+      - TTS_ADAPTER_URL=http://tts-adapter:8002
+      - TTS_ADAPTER_TIMEOUT_MS=${TTS_ADAPTER_TIMEOUT_MS:-15000}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+    depends_on:
+      text-analysis:
+        condition: service_healthy
+      tts-adapter:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      replicas: ${WORKER_REPLICAS:-1}
 
   text-analysis:
     build:
@@ -88,6 +124,9 @@ services:
       timeout: 5s
       retries: 6
       start_period: 15s
+
+volumes:
+  redis_data:
 
 networks:
   default:
