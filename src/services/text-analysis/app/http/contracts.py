@@ -49,6 +49,7 @@ class AnalyzeSegmentDto(BaseModel):
     pitchHint: float | None = None
     sentenceIntent: str | None = None
     pitchContour: list[dict[str, float]] | None = None
+    hesitationMarkers: list[str] | None = None
     stressedWords: list[str] | None = None
 
 
@@ -104,6 +105,7 @@ def to_analyze_segment_dto(segment: InternalSegmentMetadata) -> AnalyzeSegmentDt
         pitchHint=segment.pitch_hint,
         sentenceIntent=segment.sentence_intent.value,
         pitchContour=[point.model_dump() for point in segment.pitch_contour],
+        hesitationMarkers=segment.hesitation_markers or None,
         stressedWords=segment.stressed_words or None,
     )
 

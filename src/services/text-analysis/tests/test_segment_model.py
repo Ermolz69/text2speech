@@ -83,6 +83,7 @@ def test_analyze_normalizes_basic_text_noise_and_ellipsis() -> None:
             {"position": 0.0, "shift": 0.04},
             {"position": 1.0, "shift": -0.1},
         ],
+        "hesitationMarkers": ["uh"],
     }
 
 
@@ -124,6 +125,16 @@ def test_analyze_exposes_stressed_words_for_uppercase_and_marked_tokens() -> Non
     segment = body["segments"][0]
 
     assert segment["stressedWords"] == ["love", "REALLY"]
+
+
+def test_analyze_exposes_hesitation_markers_for_ellipsis() -> None:
+    response = client.post("/analyze", json={"text": "Wait... let me see"})
+
+    assert response.status_code == 200
+    body = response.json()
+    segment = body["segments"][0]
+
+    assert segment["hesitationMarkers"] == ["uh"]
 
 
 def test_analyze_splits_normalized_repeated_punctuation_into_multiple_segments() -> None:

@@ -44,8 +44,10 @@ def plan_segment(text: str, signals: ExtractedSignals) -> SegmentMetadata:
             rate = max(1.05, rate - 0.08)
 
     stressed_words = _extract_stressed_words(text)
+    hesitation_markers = _extract_hesitation_markers(text, signals)
     cues = list(signals.cues)
     cues.extend(f"emphasis:{word.lower()}" for word in stressed_words)
+    cues.extend(f"hesitation:{marker}" for marker in hesitation_markers)
 
     pitch_contour = _build_pitch_contour(signals)
 
@@ -58,6 +60,7 @@ def plan_segment(text: str, signals: ExtractedSignals) -> SegmentMetadata:
         pitch_hint=pitch_hint,
         sentence_intent=signals.sentence_intent,
         pitch_contour=pitch_contour,
+        hesitation_markers=hesitation_markers,
         stressed_words=stressed_words,
         cues=cues,
     )
@@ -96,6 +99,22 @@ def _is_uppercase_word(token: str) -> bool:
     if len(letters) < 2:
         return False
     return all(char.isupper() for char in letters)
+
+
+def _extract_hesitation_markers(text: str, signals: ExtractedSignals) -> list[str]:
+    normalized = text.strip()
+    if not normalized:
+        return []
+
+    if signals.has_ellipsis:
+        return ["uh"]
+
+    word_count = len(normalized.split())
+    clause_delimiters = normalized.count(",") + normalized.count(";") + normalized.count(":")
+    if word_count >= 12 or clause_delimiters >= 2:
+        return ["um"]
+
+    return []
 
 
 def _build_pitch_contour(signals: ExtractedSignals) -> list[dict[str, float]]:

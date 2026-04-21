@@ -29,6 +29,10 @@ class SegmentMetadata(BaseModel):
         le=12.0,
         description="Relative pitch shift hint in semitones.",
     )
+    hesitation_markers: list[str] = Field(
+        default_factory=list,
+        description="Injected hesitation markers that should be synthesized softly.",
+    )
     stressed_words: list[str] = Field(
         default_factory=list,
         description="Words that should be emphasized during synthesis.",
@@ -66,6 +70,22 @@ class SegmentMetadata(BaseModel):
             if dedupe_key in seen:
                 continue
             seen.add(dedupe_key)
+            cleaned.append(normalized)
+        return cleaned
+
+    @field_validator("hesitation_markers")
+    @classmethod
+    def validate_hesitation_markers(cls, value: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        allowed_markers = {"um", "uh", "ah"}
+        for marker in value:
+            normalized = marker.strip().lower()
+            if normalized not in allowed_markers:
+                continue
+            if normalized in seen:
+                continue
+            seen.add(normalized)
             cleaned.append(normalized)
         return cleaned
 

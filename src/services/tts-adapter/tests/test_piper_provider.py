@@ -285,3 +285,59 @@ def test_piper_provider_applies_word_level_emphasis_for_stressed_words(
 
     stressed_filter = ffmpeg_filter_calls[1]["command"][ffmpeg_filter_calls[1]["command"].index("-filter:a") + 1]
     assert "volume=1.150" in stressed_filter
+
+
+def test_piper_provider_injects_hesitation_marker_with_lower_volume_and_randomized_timing(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    calls: list[dict[str, object]] = []
+    model_path = tmp_path / "test.onnx"
+    model_path.write_bytes(b"model")
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        command_name = Path(command[0]).name
+        if command_name == "piper-bin":
+            output_path = Path(command[command.index("--output_file") + 1])
+            output_path.write_bytes(make_wav_bytes())
+        elif command_name == "ffmpeg-bin":
+            output_path = Path(command[-1])
+            if "-f" in command and command[command.index("-f") + 1] == "concat":
+                output_path.write_bytes(make_wav_bytes(duration_ms=150))
+            else:
+                input_path = Path(command[command.index("-i") + 1])
+                output_path.write_bytes(input_path.read_bytes())
+        calls.append({"command": command, **kwargs})
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr("app.providers.piper.subprocess.run", fake_run)
+    monkeypatch.setattr(
+        "app.providers.piper.shutil.which",
+        lambda binary: f"/usr/bin/{binary}" if binary in {"piper-bin", "ffmpeg-bin"} else None,
+    )
+
+    provider = PiperSynthesisProvider(
+        piper_bin="piper-bin",
+        ffmpeg_bin="ffmpeg-bin",
+        model_path=model_path,
+        output_dir=tmp_path,
+    )
+
+    provider.synthesize(
+        [
+            SegmentMetadata(
+                text="Wait...",
+                rate=1.0,
+                hesitation_markers=["uh"],
+            )
+        ]
+    )
+
+    piper_calls = [call for call in calls if Path(call["command"][0]).name == "piper-bin"]
+    ffmpeg_calls = [call for call in calls if Path(call["command"][0]).name == "ffmpeg-bin"]
+
+    assert [call["input"] for call in piper_calls] == ["Wait", "uh"]
+    hesitation_filter = ffmpeg_calls[1]["command"][ffmpeg_calls[1]["command"].index("-filter:a") + 1]
+    assert "volume=" in hesitation_filter
+    volume_segment = hesitation_filter.split("volume=")[-1]
+    assert float(volume_segment) < 0.85

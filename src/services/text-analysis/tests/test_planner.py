@@ -44,6 +44,7 @@ def test_plan_segment_combines_emotion_and_prosody_rules() -> None:
         "emoji:positive",
         "punctuation:ellipsis",
         "intent:interrogative",
+        "hesitation:uh",
     ]
 
 
@@ -226,3 +227,42 @@ def test_plan_segment_extracts_stressed_words_from_uppercase_and_markers() -> No
     assert segment.stressed_words == ["need", "REALLY"]
     assert "emphasis:need" in segment.cues
     assert "emphasis:really" in segment.cues
+
+
+def test_plan_segment_adds_hesitation_marker_for_ellipsis() -> None:
+    segment = plan_segment(
+        "Wait... let me see",
+        ExtractedSignals(
+            cues=("punctuation:ellipsis", "intent:declarative"),
+            sentence_intent=SentenceIntent.DECLARATIVE,
+            has_exclamation=False,
+            has_question=False,
+            has_ellipsis=True,
+            has_positive_emoji=False,
+            has_mixed_punctuation=False,
+            has_repeated_exclamation=False,
+            has_repeated_question=False,
+        ),
+    )
+
+    assert segment.hesitation_markers == ["uh"]
+    assert "hesitation:uh" in segment.cues
+
+
+def test_plan_segment_adds_complexity_based_hesitation_marker() -> None:
+    segment = plan_segment(
+        "Well, I think, we should maybe reconsider this choice carefully.",
+        ExtractedSignals(
+            cues=("intent:declarative",),
+            sentence_intent=SentenceIntent.DECLARATIVE,
+            has_exclamation=False,
+            has_question=False,
+            has_ellipsis=False,
+            has_positive_emoji=False,
+            has_mixed_punctuation=False,
+            has_repeated_exclamation=False,
+            has_repeated_question=False,
+        ),
+    )
+
+    assert segment.hesitation_markers == ["um"]

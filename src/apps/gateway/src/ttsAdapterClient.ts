@@ -38,6 +38,7 @@ const sharedAnalyzeSegmentSchema = z.object({
   pauseAfterMs: z.number().int().nonnegative().optional(),
   rate: z.number().positive().optional(),
   pitchHint: z.number().optional(),
+  hesitationMarkers: z.array(z.string()).optional(),
   stressedWords: z.array(z.string()).optional(),
 });
 

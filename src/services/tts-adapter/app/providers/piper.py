@@ -9,6 +9,7 @@ import tempfile
 import wave
 from dataclasses import dataclass
 from pathlib import Path
+from random import Random
 from uuid import uuid4
 
 from app.models.segment import SegmentMetadata
@@ -36,6 +37,9 @@ UNDERSCORE_MARKED_WORD_RE = re.compile(r"_([\w'-]+)_")
 
 EMPHASIS_LENGTH_SCALE_MULTIPLIER = 1.12
 EMPHASIS_VOLUME_GAIN = 1.15
+HESITATION_LENGTH_SCALE_MULTIPLIER = 1.18
+HESITATION_VOLUME_GAIN = 0.82
+HESITATION_PITCH_SHIFT = -0.3
 
 
 @dataclass(frozen=True)
@@ -47,6 +51,7 @@ class PreparedSegmentSynthesis:
     rate: float
     pitch_hint: float
     length_scale: float
+    hesitation_markers: tuple[str, ...]
     stressed_words: tuple[str, ...]
 
 
@@ -131,6 +136,7 @@ class PiperSynthesisProvider(SynthesisProvider):
                     rate=segment.rate,
                     pitch_hint=segment.pitch_hint,
                     length_scale=self._to_length_scale(segment.rate),
+                    hesitation_markers=tuple(segment.hesitation_markers),
                     stressed_words=tuple(segment.stressed_words),
                 )
             )
@@ -190,6 +196,7 @@ class PiperSynthesisProvider(SynthesisProvider):
         cleaned = text
         cleaned = ASTERISK_MARKED_WORD_RE.sub(r"\1", cleaned)
         cleaned = UNDERSCORE_MARKED_WORD_RE.sub(r"\1", cleaned)
+        cleaned = cleaned.replace("...", " ")
         for marker in NON_SPOKEN_MARKERS:
             cleaned = cleaned.replace(marker, " ")
         cleaned = COLLAPSE_WHITESPACE_RE.sub(" ", cleaned)
@@ -202,7 +209,7 @@ class PiperSynthesisProvider(SynthesisProvider):
     def _synthesize_prepared_segment(self, prepared: PreparedSegmentSynthesis, temp_dir: Path) -> Path:
         processed_segment_path = temp_dir / f"segment-{prepared.index}-processed.wav"
 
-        if not prepared.stressed_words:
+        if not prepared.stressed_words and not prepared.hesitation_markers:
             raw_segment_path = temp_dir / f"segment-{prepared.index}.wav"
             self._run_piper(prepared.spoken_text, prepared.length_scale, raw_segment_path)
             self._apply_audio_effects(
@@ -215,29 +222,85 @@ class PiperSynthesisProvider(SynthesisProvider):
 
         word_inputs = prepared.spoken_text.split()
         stressed_words = {self._normalize_word_key(word) for word in prepared.stressed_words}
+        hesitation_markers = list(prepared.hesitation_markers)
         chunk_paths: list[Path] = []
 
         for chunk_index, word in enumerate(word_inputs):
-            raw_word_path = temp_dir / f"segment-{prepared.index}-chunk-{chunk_index}.wav"
-            processed_word_path = temp_dir / f"segment-{prepared.index}-chunk-{chunk_index}-processed.wav"
-            is_stressed = self._normalize_word_key(word) in stressed_words
-            word_length_scale = prepared.length_scale
-            word_volume_gain = 1.0
-            if is_stressed:
-                word_length_scale = min(2.0, prepared.length_scale * EMPHASIS_LENGTH_SCALE_MULTIPLIER)
-                word_volume_gain = EMPHASIS_VOLUME_GAIN
-
-            self._run_piper(word, word_length_scale, raw_word_path)
-            self._apply_audio_effects(
-                raw_word_path,
-                processed_word_path,
-                pitch_hint=prepared.pitch_hint,
-                volume_gain=word_volume_gain,
+            chunk_paths.append(
+                self._render_chunk(
+                    prepared=prepared,
+                    temp_dir=temp_dir,
+                    chunk_index=chunk_index,
+                    token=word,
+                    is_stressed=self._normalize_word_key(word) in stressed_words,
+                    is_hesitation=False,
+                )
             )
-            chunk_paths.append(processed_word_path)
+
+        for hesitation_index, marker in enumerate(hesitation_markers, start=len(word_inputs)):
+            chunk_paths.append(
+                self._render_chunk(
+                    prepared=prepared,
+                    temp_dir=temp_dir,
+                    chunk_index=hesitation_index,
+                    token=marker,
+                    is_stressed=False,
+                    is_hesitation=True,
+                )
+            )
 
         self._concat_audio_files(chunk_paths, processed_segment_path, temp_dir)
         return processed_segment_path
+
+    def _render_chunk(
+        self,
+        *,
+        prepared: PreparedSegmentSynthesis,
+        temp_dir: Path,
+        chunk_index: int,
+        token: str,
+        is_stressed: bool,
+        is_hesitation: bool,
+    ) -> Path:
+        raw_word_path = temp_dir / f"segment-{prepared.index}-chunk-{chunk_index}.wav"
+        processed_word_path = temp_dir / f"segment-{prepared.index}-chunk-{chunk_index}-processed.wav"
+
+        length_scale = prepared.length_scale
+        pitch_hint = prepared.pitch_hint
+        volume_gain = 1.0
+
+        if is_stressed:
+            length_scale = min(2.0, prepared.length_scale * EMPHASIS_LENGTH_SCALE_MULTIPLIER)
+            volume_gain = EMPHASIS_VOLUME_GAIN
+
+        if is_hesitation:
+            length_scale = min(2.0, prepared.length_scale * HESITATION_LENGTH_SCALE_MULTIPLIER)
+            volume_gain = HESITATION_VOLUME_GAIN
+            pitch_hint = prepared.pitch_hint + HESITATION_PITCH_SHIFT
+
+        jitter = self._chunk_jitter(prepared.index, chunk_index, token)
+        if is_hesitation:
+            length_scale = max(0.5, min(2.0, length_scale + jitter[0]))
+            volume_gain = max(0.2, min(1.0, volume_gain + jitter[1]))
+            pitch_hint = max(-12.0, min(12.0, pitch_hint + jitter[2]))
+
+        self._run_piper(token, length_scale, raw_word_path)
+        self._apply_audio_effects(
+            raw_word_path,
+            processed_word_path,
+            pitch_hint=pitch_hint,
+            volume_gain=volume_gain,
+        )
+        return processed_word_path
+
+    def _chunk_jitter(self, segment_index: int, chunk_index: int, token: str) -> tuple[float, float, float]:
+        seed = f"{segment_index}:{chunk_index}:{token.lower()}"
+        randomizer = Random(seed)
+        return (
+            randomizer.uniform(-0.03, 0.03),
+            randomizer.uniform(-0.05, 0.02),
+            randomizer.uniform(-0.4, 0.4),
+        )
 
     def _normalize_word_key(self, word: str) -> str:
         return word.strip(" \t\n\r.,!?;:'\"()[]{}").lower()
