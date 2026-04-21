@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+import re
+
 from app.domain.mapper import map_emotion
-from app.domain.signal_extractor import ExtractedSignals
+from app.domain.signal_extractor import ExtractedSignals, SentenceIntent
 from app.models.segment import SegmentMetadata
+
+UPPERCASE_WORD_RE = re.compile(r"\b[\w'-]+\b")
+ASTERISK_MARKED_WORD_RE = re.compile(r"\*([\w'-]+)\*")
+UNDERSCORE_MARKED_WORD_RE = re.compile(r"_([\w'-]+)_")
 
 
 def plan_segment(text: str, signals: ExtractedSignals) -> SegmentMetadata:
@@ -37,6 +43,12 @@ def plan_segment(text: str, signals: ExtractedSignals) -> SegmentMetadata:
         else:
             rate = max(1.05, rate - 0.08)
 
+    stressed_words = _extract_stressed_words(text)
+    cues = list(signals.cues)
+    cues.extend(f"emphasis:{word.lower()}" for word in stressed_words)
+
+    pitch_contour = _build_pitch_contour(signals)
+
     return SegmentMetadata(
         text=text,
         emotion=mapped.emotion,
@@ -44,5 +56,73 @@ def plan_segment(text: str, signals: ExtractedSignals) -> SegmentMetadata:
         pause_ms=pause_ms,
         rate=rate,
         pitch_hint=pitch_hint,
-        cues=list(signals.cues),
+        sentence_intent=signals.sentence_intent,
+        pitch_contour=pitch_contour,
+        stressed_words=stressed_words,
+        cues=cues,
     )
+
+
+def _extract_stressed_words(text: str) -> list[str]:
+    marked_words: list[str] = []
+    for match in ASTERISK_MARKED_WORD_RE.finditer(text):
+        marked_words.append(match.group(1))
+    for match in UNDERSCORE_MARKED_WORD_RE.finditer(text):
+        marked_words.append(match.group(1))
+
+    uppercase_words = [
+        token
+        for token in UPPERCASE_WORD_RE.findall(text)
+        if _is_uppercase_word(token)
+    ]
+
+    stressed_words: list[str] = []
+    seen: set[str] = set()
+    for word in [*marked_words, *uppercase_words]:
+        normalized = word.strip("_*")
+        if not normalized:
+            continue
+        dedupe_key = normalized.lower()
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        stressed_words.append(normalized)
+
+    return stressed_words
+
+
+def _is_uppercase_word(token: str) -> bool:
+    letters = [char for char in token if char.isalpha()]
+    if len(letters) < 2:
+        return False
+    return all(char.isupper() for char in letters)
+
+
+def _build_pitch_contour(signals: ExtractedSignals) -> list[dict[str, float]]:
+    if signals.has_question or signals.sentence_intent is SentenceIntent.INTERROGATIVE:
+        # Rise by +15% over the last 20% for a classic question ending.
+        return [
+            {"position": 0.0, "shift": 0.0},
+            {"position": 0.8, "shift": 0.0},
+            {"position": 1.0, "shift": 0.15},
+        ]
+
+    if signals.has_exclamation:
+        # Exclamation starts energetic (+20%) and drops quickly.
+        return [
+            {"position": 0.0, "shift": 0.2},
+            {"position": 0.35, "shift": 0.05},
+            {"position": 1.0, "shift": -0.08},
+        ]
+
+    if signals.sentence_intent is SentenceIntent.IMPERATIVE:
+        return [
+            {"position": 0.0, "shift": 0.08},
+            {"position": 1.0, "shift": -0.06},
+        ]
+
+    # Declaratives gently fall toward the end.
+    return [
+        {"position": 0.0, "shift": 0.04},
+        {"position": 1.0, "shift": -0.1},
+    ]

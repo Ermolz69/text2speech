@@ -24,6 +24,7 @@ export interface AnalyzeSegmentDto {
   pauseAfterMs?: number;
   rate?: number;
   pitchHint?: number;
+  stressedWords?: string[];
 }
 
 export interface AnalyzeResponseDto {

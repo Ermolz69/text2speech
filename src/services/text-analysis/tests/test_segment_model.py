@@ -33,6 +33,12 @@ def test_analyze_returns_shared_segment_shape() -> None:
         "pauseAfterMs": 150,
         "rate": 1.18,
         "pitchHint": 3.0,
+        "sentenceIntent": "declarative",
+        "pitchContour": [
+            {"position": 0.0, "shift": 0.2},
+            {"position": 0.35, "shift": 0.05},
+            {"position": 1.0, "shift": -0.08},
+        ],
     }
 
 
@@ -72,6 +78,11 @@ def test_analyze_normalizes_basic_text_noise_and_ellipsis() -> None:
         "pauseAfterMs": 220,
         "rate": 0.96,
         "pitchHint": 0.0,
+        "sentenceIntent": "declarative",
+        "pitchContour": [
+            {"position": 0.0, "shift": 0.04},
+            {"position": 1.0, "shift": -0.1},
+        ],
     }
 
 
@@ -86,6 +97,8 @@ def test_analyze_returns_multiple_segments_with_independent_metadata() -> None:
     assert body["segments"][1]["emotion"] == "neutral"
     assert body["segments"][1]["intensity"] == 0
     assert body["segments"][1]["punctuation"] == ["question"]
+    assert body["segments"][1]["sentenceIntent"] == "interrogative"
+    assert body["segments"][1]["pitchContour"][-1] == {"position": 1.0, "shift": 0.15}
 
 
 def test_analyze_exposes_mixed_punctuation_in_shared_segment_metadata() -> None:
@@ -99,6 +112,18 @@ def test_analyze_exposes_mixed_punctuation_in_shared_segment_metadata() -> None:
     assert segment["punctuation"] == ["exclamation", "question", "mixed"]
     assert segment["emotion"] == "neutral"
     assert segment["intensity"] == 0
+    assert segment["sentenceIntent"] == "interrogative"
+    assert segment["pitchContour"][-1]["shift"] == 0.15
+
+
+def test_analyze_exposes_stressed_words_for_uppercase_and_marked_tokens() -> None:
+    response = client.post("/analyze", json={"text": "I REALLY *love* this"})
+
+    assert response.status_code == 200
+    body = response.json()
+    segment = body["segments"][0]
+
+    assert segment["stressedWords"] == ["love", "REALLY"]
 
 
 def test_analyze_splits_normalized_repeated_punctuation_into_multiple_segments() -> None:

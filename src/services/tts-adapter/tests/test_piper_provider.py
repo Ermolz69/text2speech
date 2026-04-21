@@ -221,3 +221,67 @@ def test_synthesize_serves_generated_wav_from_piper_provider(monkeypatch, tmp_pa
         del app.state.synthesis_provider
         if audio_file is not None and audio_file.exists():
             audio_file.unlink()
+
+
+def test_piper_provider_applies_word_level_emphasis_for_stressed_words(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    calls: list[dict[str, object]] = []
+    model_path = tmp_path / "test.onnx"
+    model_path.write_bytes(b"model")
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        command_name = Path(command[0]).name
+        if command_name == "piper-bin":
+            output_path = Path(command[command.index("--output_file") + 1])
+            output_path.write_bytes(make_wav_bytes())
+        elif command_name == "ffmpeg-bin":
+            output_path = Path(command[-1])
+            if "-f" in command and command[command.index("-f") + 1] == "concat":
+                output_path.write_bytes(make_wav_bytes(duration_ms=150))
+            else:
+                input_path = Path(command[command.index("-i") + 1])
+                output_path.write_bytes(input_path.read_bytes())
+        calls.append({"command": command, **kwargs})
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr("app.providers.piper.subprocess.run", fake_run)
+    monkeypatch.setattr(
+        "app.providers.piper.shutil.which",
+        lambda binary: f"/usr/bin/{binary}" if binary in {"piper-bin", "ffmpeg-bin"} else None,
+    )
+
+    provider = PiperSynthesisProvider(
+        piper_bin="piper-bin",
+        ffmpeg_bin="ffmpeg-bin",
+        model_path=model_path,
+        output_dir=tmp_path,
+    )
+
+    provider.synthesize(
+        [
+            SegmentMetadata(
+                text="I REALLY love this",
+                rate=1.0,
+                stressed_words=["REALLY"],
+            )
+        ]
+    )
+
+    piper_calls = [call for call in calls if Path(call["command"][0]).name == "piper-bin"]
+    ffmpeg_filter_calls = [
+        call for call in calls if Path(call["command"][0]).name == "ffmpeg-bin" and "-filter:a" in call["command"]
+    ]
+
+    assert len(piper_calls) == 4
+    assert [call["input"] for call in piper_calls] == ["I", "REALLY", "love", "this"]
+
+    lengths = [
+        call["command"][call["command"].index("--length-scale") + 1]
+        for call in piper_calls
+    ]
+    assert lengths == ["1.000", "1.120", "1.000", "1.000"]
+
+    stressed_filter = ffmpeg_filter_calls[1]["command"][ffmpeg_filter_calls[1]["command"].index("-filter:a") + 1]
+    assert "volume=1.150" in stressed_filter

@@ -32,6 +32,7 @@ class AnalyzeSegmentDto(BaseModel):
     pauseAfterMs: int | None = Field(default=None, ge=0)
     rate: float | None = Field(default=None, gt=0.0)
     pitchHint: float | None = None
+    stressedWords: list[str] | None = None
 
 
 class SynthesisMetadataDto(BaseModel):
@@ -101,6 +102,7 @@ def to_internal_segment(segment: AnalyzeSegmentDto) -> InternalSegmentMetadata:
         pause_ms=segment.pauseAfterMs or 0,
         rate=segment.rate or 1.0,
         pitch_hint=segment.pitchHint or 0.0,
+        stressed_words=segment.stressedWords or [],
         cues=[
             *_to_cues(segment.emoji, "emoji:"),
             *_to_cues(segment.punctuation, "punctuation:"),

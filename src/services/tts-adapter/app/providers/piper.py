@@ -31,6 +31,11 @@ POSITIVE_UNICODE_EMOJIS = (
 NON_SPOKEN_MARKERS = tuple(sorted((*POSITIVE_EMOTICONS, *POSITIVE_UNICODE_EMOJIS), key=len, reverse=True))
 COLLAPSE_WHITESPACE_RE = re.compile(r"\s+")
 SPACE_BEFORE_PUNCT_RE = re.compile(r"\s+([,!?;.])")
+ASTERISK_MARKED_WORD_RE = re.compile(r"\*([\w'-]+)\*")
+UNDERSCORE_MARKED_WORD_RE = re.compile(r"_([\w'-]+)_")
+
+EMPHASIS_LENGTH_SCALE_MULTIPLIER = 1.12
+EMPHASIS_VOLUME_GAIN = 1.15
 
 
 @dataclass(frozen=True)
@@ -42,6 +47,7 @@ class PreparedSegmentSynthesis:
     rate: float
     pitch_hint: float
     length_scale: float
+    stressed_words: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -125,6 +131,7 @@ class PiperSynthesisProvider(SynthesisProvider):
                     rate=segment.rate,
                     pitch_hint=segment.pitch_hint,
                     length_scale=self._to_length_scale(segment.rate),
+                    stressed_words=tuple(segment.stressed_words),
                 )
             )
 
@@ -146,11 +153,7 @@ class PiperSynthesisProvider(SynthesisProvider):
             concat_inputs: list[Path] = []
 
             for prepared in plan.segments:
-                raw_segment_path = temp_dir / f"segment-{prepared.index}.wav"
-                processed_segment_path = temp_dir / f"segment-{prepared.index}-processed.wav"
-
-                self._run_piper(prepared, raw_segment_path)
-                self._apply_pitch_hint(raw_segment_path, processed_segment_path, prepared.pitch_hint)
+                processed_segment_path = self._synthesize_prepared_segment(prepared, temp_dir)
                 concat_inputs.append(processed_segment_path)
 
                 if prepared.pause_ms > 0:
@@ -185,6 +188,8 @@ class PiperSynthesisProvider(SynthesisProvider):
 
     def _sanitize_spoken_text(self, text: str) -> str:
         cleaned = text
+        cleaned = ASTERISK_MARKED_WORD_RE.sub(r"\1", cleaned)
+        cleaned = UNDERSCORE_MARKED_WORD_RE.sub(r"\1", cleaned)
         for marker in NON_SPOKEN_MARKERS:
             cleaned = cleaned.replace(marker, " ")
         cleaned = COLLAPSE_WHITESPACE_RE.sub(" ", cleaned)
@@ -194,7 +199,50 @@ class PiperSynthesisProvider(SynthesisProvider):
     def _to_length_scale(self, rate: float) -> float:
         return max(0.5, min(2.0, 1.0 / rate))
 
-    def _run_piper(self, prepared: PreparedSegmentSynthesis, output_path: Path) -> None:
+    def _synthesize_prepared_segment(self, prepared: PreparedSegmentSynthesis, temp_dir: Path) -> Path:
+        processed_segment_path = temp_dir / f"segment-{prepared.index}-processed.wav"
+
+        if not prepared.stressed_words:
+            raw_segment_path = temp_dir / f"segment-{prepared.index}.wav"
+            self._run_piper(prepared.spoken_text, prepared.length_scale, raw_segment_path)
+            self._apply_audio_effects(
+                raw_segment_path,
+                processed_segment_path,
+                pitch_hint=prepared.pitch_hint,
+                volume_gain=1.0,
+            )
+            return processed_segment_path
+
+        word_inputs = prepared.spoken_text.split()
+        stressed_words = {self._normalize_word_key(word) for word in prepared.stressed_words}
+        chunk_paths: list[Path] = []
+
+        for chunk_index, word in enumerate(word_inputs):
+            raw_word_path = temp_dir / f"segment-{prepared.index}-chunk-{chunk_index}.wav"
+            processed_word_path = temp_dir / f"segment-{prepared.index}-chunk-{chunk_index}-processed.wav"
+            is_stressed = self._normalize_word_key(word) in stressed_words
+            word_length_scale = prepared.length_scale
+            word_volume_gain = 1.0
+            if is_stressed:
+                word_length_scale = min(2.0, prepared.length_scale * EMPHASIS_LENGTH_SCALE_MULTIPLIER)
+                word_volume_gain = EMPHASIS_VOLUME_GAIN
+
+            self._run_piper(word, word_length_scale, raw_word_path)
+            self._apply_audio_effects(
+                raw_word_path,
+                processed_word_path,
+                pitch_hint=prepared.pitch_hint,
+                volume_gain=word_volume_gain,
+            )
+            chunk_paths.append(processed_word_path)
+
+        self._concat_audio_files(chunk_paths, processed_segment_path, temp_dir)
+        return processed_segment_path
+
+    def _normalize_word_key(self, word: str) -> str:
+        return word.strip(" \t\n\r.,!?;:'\"()[]{}").lower()
+
+    def _run_piper(self, spoken_text: str, length_scale: float, output_path: Path) -> None:
         subprocess.run(
             [
                 self.piper_bin,
@@ -203,11 +251,11 @@ class PiperSynthesisProvider(SynthesisProvider):
                 "--output_file",
                 str(output_path),
                 "--length-scale",
-                f"{prepared.length_scale:.3f}",
+                f"{length_scale:.3f}",
                 "--sentence-silence",
                 "0",
             ],
-            input=prepared.spoken_text,
+            input=spoken_text,
             text=True,
             capture_output=True,
             check=True,
@@ -216,15 +264,25 @@ class PiperSynthesisProvider(SynthesisProvider):
         if not output_path.exists() or output_path.stat().st_size == 0:
             raise RuntimeError("Piper did not produce a per-segment WAV file")
 
-    def _apply_pitch_hint(self, input_path: Path, output_path: Path, pitch_hint: float) -> None:
+    def _apply_audio_effects(
+        self,
+        input_path: Path,
+        output_path: Path,
+        *,
+        pitch_hint: float,
+        volume_gain: float,
+    ) -> None:
         sample_rate, _, _ = self._read_wav_format(input_path)
         pitch_factor = math.pow(2.0, pitch_hint / 12.0)
         tempo_compensation = 1.0 / pitch_factor
-        audio_filter = (
-            f"asetrate={sample_rate}*{pitch_factor:.6f},"
-            f"aresample={sample_rate},"
-            f"atempo={tempo_compensation:.6f}"
-        )
+        filters = [
+            f"asetrate={sample_rate}*{pitch_factor:.6f}",
+            f"aresample={sample_rate}",
+            f"atempo={tempo_compensation:.6f}",
+        ]
+        if volume_gain != 1.0:
+            filters.append(f"volume={volume_gain:.3f}")
+        audio_filter = ",".join(filters)
 
         subprocess.run(
             [

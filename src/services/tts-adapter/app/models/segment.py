@@ -29,6 +29,10 @@ class SegmentMetadata(BaseModel):
         le=12.0,
         description="Relative pitch shift hint in semitones.",
     )
+    stressed_words: list[str] = Field(
+        default_factory=list,
+        description="Words that should be emphasized during synthesis.",
+    )
     cues: list[str] = Field(default_factory=list, description="Raw cues that produced the metadata.")
 
     @field_validator("text")
@@ -47,6 +51,22 @@ class SegmentMetadata(BaseModel):
             cue = cue.strip()
             if cue:
                 cleaned.append(cue)
+        return cleaned
+
+    @field_validator("stressed_words")
+    @classmethod
+    def validate_stressed_words(cls, value: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for word in value:
+            normalized = word.strip()
+            if not normalized:
+                continue
+            dedupe_key = normalized.lower()
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            cleaned.append(normalized)
         return cleaned
 
 

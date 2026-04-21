@@ -5,6 +5,7 @@ from enum import Enum
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.domain.normalizer import normalize_text
+from app.domain.signal_extractor import SentenceIntent
 
 
 class Emotion(str, Enum):
@@ -15,6 +16,18 @@ class Emotion(str, Enum):
     CALM = "calm"
     EXCITED = "excited"
     SURPRISED = "surprised"
+
+
+class PitchContourPoint(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    position: float = Field(..., ge=0.0, le=1.0, description="Relative position in segment timeline.")
+    shift: float = Field(
+        ...,
+        ge=-1.0,
+        le=1.0,
+        description="Relative pitch shift at position as a ratio, where +0.15 means +15%.",
+    )
 
 
 class SegmentMetadata(BaseModel):
@@ -30,6 +43,15 @@ class SegmentMetadata(BaseModel):
         ge=-12.0,
         le=12.0,
         description="Relative pitch shift hint in semitones.",
+    )
+    sentence_intent: SentenceIntent = Field(default=SentenceIntent.DECLARATIVE)
+    pitch_contour: list[PitchContourPoint] = Field(
+        default_factory=list,
+        description="Dynamic pitch contour hint points over the segment.",
+    )
+    stressed_words: list[str] = Field(
+        default_factory=list,
+        description="Words that should be emphasized during synthesis.",
     )
     cues: list[str] = Field(default_factory=list, description="Raw cues that produced the metadata.")
 
@@ -48,6 +70,22 @@ class SegmentMetadata(BaseModel):
             cue = cue.strip()
             if cue:
                 cleaned.append(cue)
+        return cleaned
+
+    @field_validator("stressed_words")
+    @classmethod
+    def validate_stressed_words(cls, value: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for word in value:
+            normalized = word.strip()
+            if not normalized:
+                continue
+            dedupe_key = normalized.lower()
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            cleaned.append(normalized)
         return cleaned
 
 

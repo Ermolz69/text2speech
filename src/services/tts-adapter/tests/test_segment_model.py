@@ -106,6 +106,7 @@ def test_synthesize_accepts_shared_request_structure() -> None:
                     "pauseAfterMs": 250,
                     "rate": 1.18,
                     "pitchHint": 3.0,
+                    "stressedWords": ["Hello"],
                 }
             ],
         },
@@ -157,6 +158,7 @@ def test_synthesize_delegates_to_configured_provider() -> None:
                     "pauseAfterMs": 10,
                     "rate": 1.0,
                     "pitchHint": 0.0,
+                    "stressedWords": ["Hello"],
                 }
             ]
         },

@@ -33,6 +33,7 @@ const upstreamAnalyzeResponseSchema = z.object({
       pauseAfterMs: z.number().int().nonnegative().optional(),
       rate: z.number().positive().optional(),
       pitchHint: z.number().optional(),
+      stressedWords: z.array(z.string()).optional(),
     })
   ),
 });
@@ -74,6 +75,7 @@ export function mapAnalyzeResponse(payload: unknown): AnalyzeResponseDto {
       ...(typeof segment.pauseAfterMs === "number" ? { pauseAfterMs: segment.pauseAfterMs } : {}),
       ...(typeof segment.rate === "number" ? { rate: segment.rate } : {}),
       ...(typeof segment.pitchHint === "number" ? { pitchHint: segment.pitchHint } : {}),
+      ...(segment.stressedWords ? { stressedWords: segment.stressedWords } : {}),
     })),
   };
 }
