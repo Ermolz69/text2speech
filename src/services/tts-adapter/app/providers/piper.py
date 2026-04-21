@@ -40,6 +40,8 @@ EMPHASIS_VOLUME_GAIN = 1.15
 HESITATION_LENGTH_SCALE_MULTIPLIER = 1.18
 HESITATION_VOLUME_GAIN = 0.82
 HESITATION_PITCH_SHIFT = -0.3
+MICRO_FADE_MS = 8
+ROOM_TONE_VOLUME = 0.006
 
 
 @dataclass(frozen=True)
@@ -165,7 +167,7 @@ class PiperSynthesisProvider(SynthesisProvider):
                 if prepared.pause_ms > 0:
                     pause_path = temp_dir / f"pause-{prepared.index}.wav"
                     sample_rate, channels, sample_width = self._read_wav_format(processed_segment_path)
-                    self._create_silence_wav(
+                    self._create_comfort_noise_wav(
                         pause_path,
                         duration_ms=prepared.pause_ms,
                         sample_rate=sample_rate,
@@ -336,12 +338,15 @@ class PiperSynthesisProvider(SynthesisProvider):
         volume_gain: float,
     ) -> None:
         sample_rate, _, _ = self._read_wav_format(input_path)
+        fade_seconds = self._fade_seconds(input_path)
         pitch_factor = math.pow(2.0, pitch_hint / 12.0)
         tempo_compensation = 1.0 / pitch_factor
         filters = [
             f"asetrate={sample_rate}*{pitch_factor:.6f}",
             f"aresample={sample_rate}",
             f"atempo={tempo_compensation:.6f}",
+            f"afade=t=in:st=0:d={fade_seconds:.3f}",
+            f"afade=t=out:st={max(self._audio_duration_seconds(input_path) - fade_seconds, 0.0):.3f}:d={fade_seconds:.3f}",
         ]
         if volume_gain != 1.0:
             filters.append(f"volume={volume_gain:.3f}")
@@ -367,11 +372,25 @@ class PiperSynthesisProvider(SynthesisProvider):
         if not output_path.exists() or output_path.stat().st_size == 0:
             raise RuntimeError("FFmpeg did not produce a processed per-segment WAV file")
 
+    def _fade_seconds(self, audio_path: Path) -> float:
+        duration_seconds = self._audio_duration_seconds(audio_path)
+        if duration_seconds <= 0.0:
+            return 0.005
+        return max(0.005, min(0.01, duration_seconds / 4.0))
+
+    def _audio_duration_seconds(self, audio_path: Path) -> float:
+        sample_rate, _, _ = self._read_wav_format(audio_path)
+        with wave.open(str(audio_path), "rb") as wav_file:
+            frame_count = wav_file.getnframes()
+        if sample_rate <= 0:
+            return 0.0
+        return frame_count / sample_rate
+
     def _read_wav_format(self, audio_path: Path) -> tuple[int, int, int]:
         with wave.open(str(audio_path), "rb") as wav_file:
             return wav_file.getframerate(), wav_file.getnchannels(), wav_file.getsampwidth()
 
-    def _create_silence_wav(
+    def _create_comfort_noise_wav(
         self,
         output_path: Path,
         *,
@@ -380,14 +399,41 @@ class PiperSynthesisProvider(SynthesisProvider):
         channels: int,
         sample_width: int,
     ) -> None:
-        frame_count = int(sample_rate * (duration_ms / 1000))
-        silent_frame = b"\x00" * sample_width * channels
+        duration_seconds = max(duration_ms / 1000.0, 0.005)
+        fade_seconds = max(0.005, min(0.01, duration_seconds / 4.0))
+        tail_start = max(duration_seconds - fade_seconds, 0.0)
 
-        with wave.open(str(output_path), "wb") as wav_file:
-            wav_file.setnchannels(channels)
-            wav_file.setsampwidth(sample_width)
-            wav_file.setframerate(sample_rate)
-            wav_file.writeframes(silent_frame * frame_count)
+        subprocess.run(
+            [
+                self.ffmpeg_bin,
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                f"anoisesrc=color=white:duration={duration_seconds:.3f}:sample_rate={sample_rate}",
+                "-filter:a",
+                ",".join(
+                    [
+                        f"highpass=f=120",
+                        f"lowpass=f=3500",
+                        f"volume={ROOM_TONE_VOLUME:.4f}",
+                        f"afade=t=in:st=0:d={fade_seconds:.3f}",
+                        f"afade=t=out:st={tail_start:.3f}:d={fade_seconds:.3f}",
+                    ]
+                ),
+                "-ac",
+                str(channels),
+                "-c:a",
+                "pcm_s16le",
+                str(output_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+
+        if not output_path.exists() or output_path.stat().st_size == 0:
+            raise RuntimeError("FFmpeg did not produce a comfort-noise WAV file")
 
     def _concat_audio_files(self, input_paths: list[Path], output_path: Path, temp_dir: Path) -> None:
         concat_file = temp_dir / "concat.txt"

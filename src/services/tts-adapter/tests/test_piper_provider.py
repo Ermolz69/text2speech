@@ -99,6 +99,9 @@ def test_piper_provider_invokes_cli_per_segment_and_strips_non_spoken_markers(
         if command_name == "piper-bin":
             output_path = Path(command[command.index("--output_file") + 1])
             output_path.write_bytes(make_wav_bytes())
+        elif command_name == "ffmpeg-bin" and "anoisesrc" in " ".join(command):
+            output_path = Path(command[-1])
+            output_path.write_bytes(make_wav_bytes(duration_ms=120))
         elif command_name == "ffmpeg-bin":
             if "-f" in command and command[command.index("-f") + 1] == "concat":
                 output_path = Path(command[-1])
@@ -144,6 +147,8 @@ def test_piper_provider_invokes_cli_per_segment_and_strips_non_spoken_markers(
     assert piper_calls[0]["command"][piper_calls[0]["command"].index("--length-scale") + 1] == "0.800"
     assert piper_calls[1]["command"][piper_calls[1]["command"].index("--length-scale") + 1] == "1.250"
     assert any("asetrate=" in " ".join(call["command"]) for call in ffmpeg_calls)
+    assert any("afade=t=in" in " ".join(call["command"]) for call in ffmpeg_calls)
+    assert any("anoisesrc" in " ".join(call["command"]) for call in ffmpeg_calls)
     assert any("concat" in call["command"] for call in ffmpeg_calls)
 
 
@@ -157,6 +162,9 @@ def test_synthesize_serves_generated_wav_from_piper_provider(monkeypatch, tmp_pa
         if command_name == "piper-bin":
             output_path = Path(command[command.index("--output_file") + 1])
             output_path.write_bytes(make_wav_bytes())
+        elif command_name == "ffmpeg-bin" and "anoisesrc" in " ".join(command):
+            output_path = Path(command[-1])
+            output_path.write_bytes(make_wav_bytes(duration_ms=120))
         elif command_name == "ffmpeg-bin":
             output_path = Path(command[-1])
             if "-f" in command and command[command.index("-f") + 1] == "concat":
@@ -236,6 +244,9 @@ def test_piper_provider_applies_word_level_emphasis_for_stressed_words(
         if command_name == "piper-bin":
             output_path = Path(command[command.index("--output_file") + 1])
             output_path.write_bytes(make_wav_bytes())
+        elif command_name == "ffmpeg-bin" and "anoisesrc" in " ".join(command):
+            output_path = Path(command[-1])
+            output_path.write_bytes(make_wav_bytes(duration_ms=120))
         elif command_name == "ffmpeg-bin":
             output_path = Path(command[-1])
             if "-f" in command and command[command.index("-f") + 1] == "concat":
