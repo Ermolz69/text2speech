@@ -414,8 +414,8 @@ class PiperSynthesisProvider(SynthesisProvider):
                 "-filter:a",
                 ",".join(
                     [
-                        f"highpass=f=120",
-                        f"lowpass=f=3500",
+                        "highpass=f=120",
+                        "lowpass=f=3500",
                         f"volume={ROOM_TONE_VOLUME:.4f}",
                         f"afade=t=in:st=0:d={fade_seconds:.3f}",
                         f"afade=t=out:st={tail_start:.3f}:d={fade_seconds:.3f}",
