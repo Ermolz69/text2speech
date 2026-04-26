@@ -14,9 +14,14 @@ class EmotionMapping:
 
 def map_emotion(signals: ExtractedSignals) -> EmotionMapping:
     if signals.has_positive_emoji:
-        return EmotionMapping(emotion=Emotion.HAPPY, intensity=0.7)
+        intensity = min(1.0, 0.5 + signals.positive_emoji_count * 0.2)
+        return EmotionMapping(emotion=Emotion.HAPPY, intensity=intensity)
 
     if signals.has_ellipsis:
         return EmotionMapping(emotion=Emotion.SAD, intensity=0.2)
+
+    if signals.has_exclamation:
+        intensity = min(1.0, signals.exclamation_count * 0.5)
+        return EmotionMapping(emotion=Emotion.EXCITED, intensity=intensity)
 
     return EmotionMapping(emotion=Emotion.NEUTRAL, intensity=0.0)
