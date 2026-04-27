@@ -13,6 +13,16 @@ _ABBREVIATIONS = {
 _EMOTICONS = (":)", ":-)", ":D", ":-D", ";)", ";-)", ":(", ":-(")
 _TRAILING_CUE_CHARS = {')', ']', '}', '"', "'"}
 
+_BREATH_PAUSE_TAG = '<break time="300ms"/>'
+_VOLUME_DIP_TAG = '<volume level="x-low">'
+_VOLUME_RESTORE_TAG = "</volume>"
+
+_CONJUNCTIONS = {"and", "but", "or", "nor", "for", "yet", "so", "because", "although", "while", "when", "if", "since"}
+_BREAK_CHARS = {",", ";", ":", "—", "–"}
+
+_MAX_WORDS_BEFORE_BREATH = 18
+_MIN_WORDS_FOR_BREATH = 10
+
 
 def split_segments(text: str) -> list[str]:
     if not text:
@@ -37,6 +47,7 @@ def split_segments(text: str) -> list[str]:
         end = _consume_trailing_cues(text, end)
         segment = text[start:end].strip()
         if segment:
+            segment = _inject_breath_pauses(segment)
             segments.append(segment)
 
         start = end
@@ -46,9 +57,65 @@ def split_segments(text: str) -> list[str]:
 
     tail = text[start:].strip()
     if tail:
+        tail = _inject_breath_pauses(tail)
         segments.append(tail)
 
     return segments
+
+
+def _inject_breath_pauses(segment: str) -> str:
+    words = segment.split()
+    if len(words) < _MAX_WORDS_BEFORE_BREATH:
+        return segment
+
+    break_points = _find_break_points(words)
+    return _insert_breaths_at_breaks(words, break_points)
+
+
+def _find_break_points(words: list[str]) -> list[int]:
+    break_points = []
+    for i, word in enumerate(words):
+        clean = _clean_word(word).lower()
+        if word.endswith(",") or word.endswith(";") or word.endswith(":"):
+            break_points.append(i)
+        elif clean in _CONJUNCTIONS and i > 0:
+            break_points.append(i - 1)
+        elif word in ("—", "–"):
+            break_points.append(i)
+    
+    break_points.sort()
+    return break_points
+
+
+def _insert_breaths_at_breaks(words: list[str], break_points: list[int]) -> str:
+    if not break_points:
+        return " ".join(words)
+
+    breath_tag = f" {_VOLUME_DIP_TAG} {_BREATH_PAUSE_TAG} {_VOLUME_RESTORE_TAG} "
+    result_parts: list[str] = []
+    chunk_start = 0
+
+    remaining_breaks = list(break_points)
+    while remaining_breaks and chunk_start < len(words):
+        next_break = remaining_breaks.pop(0)
+        if next_break < chunk_start:
+            continue
+        
+        chunk_end = next_break + 1
+        chunk_len = chunk_end - chunk_start
+        
+        if chunk_len >= _MIN_WORDS_FOR_BREATH or (not result_parts and len(words) >= _MAX_WORDS_BEFORE_BREATH):
+            result_parts.append(" ".join(words[chunk_start:chunk_end]) + breath_tag)
+            chunk_start = chunk_end
+
+    if chunk_start < len(words):
+        result_parts.append(" ".join(words[chunk_start:]))
+
+    return "".join(result_parts)
+
+
+def _clean_word(word: str) -> str:
+    return word.strip(".,;:!?\"'()[]{}")
 
 
 def _boundary_length(text: str, index: int) -> int:
