@@ -24,6 +24,9 @@ interface SynthesisFormProps {
   onVoiceChange: (voiceId: string) => void;
   onModeChange: (mode: SynthesisMode) => void;
   onFormatChange: (format: FormState["outputFormat"]) => void;
+  onLengthScaleChange: (lengthScale: number) => void;
+  onNoiseScaleChange: (noiseScale: number) => void;
+  onIntensityBoostChange: (intensityBoost: FormState["intensityBoost"]) => void;
 }
 
 const stageLabel: Record<NonNullable<LoadingStage>, string> = {
@@ -42,6 +45,9 @@ export function SynthesisForm({
   onVoiceChange,
   onModeChange,
   onFormatChange,
+  onLengthScaleChange,
+  onNoiseScaleChange,
+  onIntensityBoostChange,
 }: SynthesisFormProps) {
   const isLoading = requestState === "loading";
   const textId = useId();
@@ -51,6 +57,8 @@ export function SynthesisForm({
   const loadingStatusId = useId();
   const errorMessageId = useId();
   const textHintId = useId();
+  const lengthScaleId = useId();
+  const noiseScaleId = useId();
   const loadingAnnouncement = isLoading
     ? loadingStage
       ? stageLabel[loadingStage]
@@ -146,6 +154,68 @@ export function SynthesisForm({
             <option value="mp3">mp3</option>
             <option value="wav">wav</option>
           </select>
+        </div>
+
+        <div className="block">
+          <label htmlFor={lengthScaleId} className="mb-2 block text-sm text-stone-600">
+            length_scale ({formState.lengthScale.toFixed(2)})
+          </label>
+          <input
+            id={lengthScaleId}
+            type="range"
+            min={0.5}
+            max={2}
+            step={0.05}
+            className="w-full accent-emerald-700"
+            value={formState.lengthScale}
+            onChange={(event) => onLengthScaleChange(Number(event.target.value))}
+            disabled={isLoading}
+            aria-label="length_scale"
+          />
+        </div>
+
+        <div className="block">
+          <label htmlFor={noiseScaleId} className="mb-2 block text-sm text-stone-600">
+            noise_scale ({formState.noiseScale.toFixed(2)})
+          </label>
+          <input
+            id={noiseScaleId}
+            type="range"
+            min={0}
+            max={1.5}
+            step={0.05}
+            className="w-full accent-emerald-700"
+            value={formState.noiseScale}
+            onChange={(event) => onNoiseScaleChange(Number(event.target.value))}
+            disabled={isLoading}
+            aria-label="noise_scale"
+          />
+        </div>
+      </div>
+
+      <div className="mb-4">
+        <p className="mb-2 text-sm text-stone-600">Preset emotion boost</p>
+        <div className="flex flex-wrap gap-2">
+          {[0, 1, 2, 3].map((preset) => {
+            const isActive = formState.intensityBoost === preset;
+            const labelByPreset = ["Off", "Light", "Medium", "Strong"] as const;
+            return (
+              <button
+                key={preset}
+                type="button"
+                className={`rounded-lg border px-3 py-1.5 text-sm transition ${
+                  isActive
+                    ? "border-emerald-700 bg-emerald-700 text-white"
+                    : "border-stone-300 bg-white text-stone-700 hover:border-emerald-400"
+                }`}
+                onClick={() => onIntensityBoostChange(preset as FormState["intensityBoost"])}
+                disabled={isLoading || formState.mode === "neutral"}
+                aria-pressed={isActive}
+              >
+                {labelByPreset[preset]}
+              </button>
+            );
+          })}
         </div>
       </div>
 

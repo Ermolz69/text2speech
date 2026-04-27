@@ -1,19 +1,23 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import type { AnalyzeSegmentDto } from "shared";
 
 import type { FormState, LoadingStage, RequestState } from "@features/synthesis";
-import { analyzeText, synthesizeText } from "@shared/api";
+import { analyzeText, getTtsVoices, synthesizeText } from "@shared/api";
 
-import { DEFAULT_TEXT, voiceOptions } from "./constants";
+import { DEFAULT_TEXT, defaultVoiceOptions } from "./constants";
 import { getSummaryState } from "./summary";
 
 export function useHomePage() {
+  const [voiceOptions, setVoiceOptions] = useState(defaultVoiceOptions);
   const [formState, setFormState] = useState<FormState>({
     text: DEFAULT_TEXT,
-    voiceId: voiceOptions[0].value,
+    voiceId: defaultVoiceOptions[0].value,
     mode: "expressive",
     outputFormat: "mp3",
+    lengthScale: 1,
+    noiseScale: 0.667,
+    intensityBoost: 0,
   });
   const [requestState, setRequestState] = useState<RequestState>("idle");
   const [loadingStage, setLoadingStage] = useState<LoadingStage>(null);
@@ -24,6 +28,38 @@ export function useHomePage() {
   const [showDiagnostics, setShowDiagnostics] = useState(true);
 
   const summary = useMemo(() => getSummaryState(segments), [segments]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadVoices() {
+      try {
+        const response = await getTtsVoices();
+        if (!isMounted || response.voices.length === 0) {
+          return;
+        }
+
+        const options = response.voices.map((voice) => ({
+          value: voice.id,
+          label: voice.label,
+        }));
+
+        setVoiceOptions(options);
+        setFormState((prev) => {
+          const hasSelectedVoice = options.some((option) => option.value === prev.voiceId);
+          return hasSelectedVoice ? prev : { ...prev, voiceId: options[0].value };
+        });
+      } catch {
+        // Keep fallback voices when catalog loading fails.
+      }
+    }
+
+    void loadVoices();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -53,9 +89,13 @@ export function useHomePage() {
         voiceId: formState.voiceId,
         metadata: {
           format: formState.outputFormat,
+          lengthScale: formState.lengthScale,
+          noiseScale: formState.noiseScale,
           ...(formState.mode === "neutral"
             ? { emotion: "neutral" as const, intensity: 0 as const }
-            : {}),
+            : formState.intensityBoost > 0
+              ? { intensityBoost: formState.intensityBoost }
+              : {}),
         },
       });
 
@@ -90,6 +130,18 @@ export function useHomePage() {
     setFormState((prev) => ({ ...prev, outputFormat }));
   }
 
+  function handleLengthScaleChange(lengthScale: number) {
+    setFormState((prev) => ({ ...prev, lengthScale }));
+  }
+
+  function handleNoiseScaleChange(noiseScale: number) {
+    setFormState((prev) => ({ ...prev, noiseScale }));
+  }
+
+  function handleIntensityBoostChange(intensityBoost: FormState["intensityBoost"]) {
+    setFormState((prev) => ({ ...prev, intensityBoost }));
+  }
+
   function toggleDiagnostics() {
     setShowDiagnostics((prev) => !prev);
   }
@@ -110,6 +162,9 @@ export function useHomePage() {
     handleVoiceChange,
     handleModeChange,
     handleFormatChange,
+    handleLengthScaleChange,
+    handleNoiseScaleChange,
+    handleIntensityBoostChange,
     toggleDiagnostics,
   };
 }

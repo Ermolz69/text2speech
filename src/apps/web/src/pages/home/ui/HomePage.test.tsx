@@ -9,8 +9,9 @@ describe("HomePage", () => {
 
     expect(html).toContain("Emotional TTS Playground");
     expect(html).toContain("Run synthesis");
-    expect(html).toContain("Voice 1");
-    expect(html).toContain("Voice 2");
+    expect(html).toContain("en_US-lessac-medium");
+    expect(html).toContain("length_scale");
+    expect(html).toContain("noise_scale");
     expect(html).toContain("idle");
     expect(html).toContain("Audio will appear here after a successful request.");
     expect(html).toContain("No segments to display yet.");
