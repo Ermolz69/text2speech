@@ -37,12 +37,12 @@ describe("SynthesisForm interactions", () => {
       />
     );
 
-    fireEvent.change(screen.getByPlaceholderText("Paste text to synthesize"), {
+    fireEvent.change(screen.getByLabelText("Text"), {
       target: { value: "Updated text" },
     });
-    fireEvent.change(screen.getByDisplayValue("Voice 1"), { target: { value: "voice-2" } });
-    fireEvent.change(screen.getByDisplayValue("expressive"), { target: { value: "neutral" } });
-    fireEvent.change(screen.getByDisplayValue("mp3"), { target: { value: "wav" } });
+    fireEvent.change(screen.getByLabelText("Voice"), { target: { value: "voice-2" } });
+    fireEvent.change(screen.getByLabelText("Mode"), { target: { value: "neutral" } });
+    fireEvent.change(screen.getByLabelText("Format"), { target: { value: "wav" } });
     fireEvent.submit(screen.getByRole("button", { name: "Run synthesis" }).closest("form")!);
 
     expect(onTextChange).toHaveBeenCalledWith("Updated text");

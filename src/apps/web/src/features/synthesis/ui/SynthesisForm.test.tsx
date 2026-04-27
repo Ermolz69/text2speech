@@ -37,6 +37,8 @@ describe("SynthesisForm", () => {
     expect(html).toContain("wav");
     expect(html).toContain("mp3");
     expect(html).toContain("Run synthesis");
+    expect(html).toContain("Synthesis status: Idle");
+    expect(html).toContain("required");
     expect(html).not.toContain("Generating...");
   });
 
@@ -50,6 +52,7 @@ describe("SynthesisForm", () => {
     );
 
     expect(html).toContain("Generating\u2026");
+    expect(html).toContain("Synthesis status: Generating\u2026");
     expect(html).toContain("disabled");
     expect(html).toContain("Gateway request failed with status 502");
   });
