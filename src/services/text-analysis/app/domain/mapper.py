@@ -34,9 +34,6 @@ def map_emotion(signals: ExtractedSignals) -> EmotionMapping:
             return EmotionMapping(emotion=Emotion.SURPRISED, intensity=0.5)
         return EmotionMapping(emotion=Emotion.SAD, intensity=0.2)
 
-    if signals.has_repeated_exclamation:
-        return EmotionMapping(emotion=Emotion.EXCITED, intensity=0.8)
-
     if signals.has_exclamation:
         intensity = min(1.0, signals.exclamation_count * 0.5)
         return EmotionMapping(emotion=Emotion.EXCITED, intensity=intensity)

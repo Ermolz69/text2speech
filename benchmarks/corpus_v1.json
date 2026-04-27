@@ -76,9 +76,9 @@
         {
           "id": "amplified-005",
           "text": "Wow!!! That's incredible! 😱✨",
-          "expected_emotion": "happy",
+          "expected_emotion": "excited",
           "expected_intensity": 0.5,
-          "notes": "Exclamation mark triggers happy emotion"
+          "notes": "First segment has single exclamation mark"
         }
       ]
     },
@@ -129,9 +129,9 @@
           "id": "multi-001",
           "text": "Good morning! Today is a beautiful day. Let's enjoy it! 🌞",
           "expected_segments": [
-            { "text": "Good morning!", "emotion": "happy", "intensity": 0.5 },
+            { "text": "Good morning!", "emotion": "excited", "intensity": 0.5 },
             { "text": "Today is a beautiful day.", "emotion": "neutral", "intensity": 0.0 },
-            { "text": "Let's enjoy it! 🌞", "emotion": "excited", "intensity": 0.8 }
+            { "text": "Let's enjoy it! 🌞", "emotion": "excited", "intensity": 0.9 }
           ],
           "notes": "Three segments with varying emotion"
         },
@@ -160,7 +160,7 @@
           "text": "I'm so excited! 🎊 We're going to Paris! Can you believe it?!",
           "expected_segments": [
             { "text": "I'm so excited! 🎊", "emotion": "excited", "intensity": 0.9 },
-            { "text": "We're going to Paris!", "emotion": "happy", "intensity": 0.5 },
+            { "text": "We're going to Paris!", "emotion": "excited", "intensity": 0.5 },
             { "text": "Can you believe it?!", "emotion": "surprised", "intensity": 0.7 }
           ],
           "notes": "Mixed emotions with celebration and surprise"

@@ -39,6 +39,7 @@ def test_plan_segment_combines_emotion_and_prosody_rules() -> None:
             has_question=True,
             has_ellipsis=True,
             has_positive_emoji=True,
+            positive_emoji_count=1,
         ),
     )
 
