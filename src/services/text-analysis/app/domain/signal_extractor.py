@@ -26,6 +26,8 @@ class ExtractedSignals:
     has_mixed_punctuation: bool
     has_repeated_exclamation: bool
     has_repeated_question: bool
+    exclamation_count: int
+    positive_emoji_count: int
 
 
 def extract_signals(text: str) -> ExtractedSignals:
@@ -37,6 +39,9 @@ def extract_signals(text: str) -> ExtractedSignals:
     has_mixed_punctuation = "?!" in text or "!?" in text
     has_repeated_exclamation = "!!" in text
     has_repeated_question = "??" in text
+
+    exclamation_count = text.count("!")
+    positive_emoji_count = sum(1 for emoji in (*POSITIVE_EMOTICONS, *POSITIVE_UNICODE_EMOJIS) if emoji in text)
 
     if has_exclamation:
         cues.append("punctuation:exclamation")
@@ -62,4 +67,6 @@ def extract_signals(text: str) -> ExtractedSignals:
         has_mixed_punctuation=has_mixed_punctuation,
         has_repeated_exclamation=has_repeated_exclamation,
         has_repeated_question=has_repeated_question,
+        exclamation_count=exclamation_count,
+        positive_emoji_count=positive_emoji_count,
     )

@@ -1,0 +1,15 @@
+Metadata-Version: 2.4
+Name: text_analysis
+Version: 0.1.0
+Summary: Text analysis service for emotional TTS (normalizer, parser, emotion mapping, prosody planning)
+Requires-Python: >=3.11
+Requires-Dist: fastapi
+Requires-Dist: uvicorn[standard]
+Requires-Dist: pydantic
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
+Requires-Dist: pytest-cov; extra == "dev"
+Requires-Dist: httpx; extra == "dev"
+Requires-Dist: black; extra == "dev"
+Requires-Dist: isort; extra == "dev"
+Requires-Dist: ruff; extra == "dev"
