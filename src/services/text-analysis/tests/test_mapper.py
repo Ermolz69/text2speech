@@ -11,9 +11,15 @@ def test_map_emotion_defaults_to_neutral_without_cues() -> None:
             has_question=False,
             has_ellipsis=False,
             has_positive_emoji=False,
+            has_negative_emoji=False,
+            has_surprise_emoji=False,
+            has_celebration_emoji=False,
             has_mixed_punctuation=False,
             has_repeated_exclamation=False,
             has_repeated_question=False,
+            is_all_caps=False,
+            exclamation_count=0,
+            question_count=0,
         )
     )
 
@@ -29,9 +35,15 @@ def test_map_emotion_returns_happy_for_positive_emoji() -> None:
             has_question=False,
             has_ellipsis=False,
             has_positive_emoji=True,
+            has_negative_emoji=False,
+            has_surprise_emoji=False,
+            has_celebration_emoji=False,
             has_mixed_punctuation=False,
             has_repeated_exclamation=False,
             has_repeated_question=False,
+            is_all_caps=False,
+            exclamation_count=0,
+            question_count=0,
         )
     )
 
@@ -47,9 +59,15 @@ def test_map_emotion_returns_sad_for_ellipsis() -> None:
             has_question=False,
             has_ellipsis=True,
             has_positive_emoji=False,
+            has_negative_emoji=False,
+            has_surprise_emoji=False,
+            has_celebration_emoji=False,
             has_mixed_punctuation=False,
             has_repeated_exclamation=False,
             has_repeated_question=False,
+            is_all_caps=False,
+            exclamation_count=0,
+            question_count=0,
         )
     )
 
@@ -66,9 +84,15 @@ def test_map_emotion_prefers_happy_over_sad_when_both_signals_exist() -> None:
             has_question=False,
             has_ellipsis=True,
             has_positive_emoji=True,
+            has_negative_emoji=False,
+            has_surprise_emoji=False,
+            has_celebration_emoji=False,
             has_mixed_punctuation=False,
             has_repeated_exclamation=False,
             has_repeated_question=False,
+            is_all_caps=False,
+            exclamation_count=0,
+            question_count=0,
         )
     )
 
