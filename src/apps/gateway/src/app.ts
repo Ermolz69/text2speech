@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/node";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import type {
   AnalyzeRequestDto,
@@ -21,6 +22,15 @@ import {
   TtsAdapterClientError,
   type TtsAdapterClient,
 } from "./ttsAdapterClient.js";
+
+const sentryDsn = process.env.SENTRY_DSN;
+if (sentryDsn) {
+  Sentry.init({
+    dsn: sentryDsn,
+    tracesSampleRate: parseFloat(process.env.SENTRY_TRACES_SAMPLE_RATE ?? "0.1"),
+    environment: process.env.SENTRY_ENVIRONMENT ?? "production",
+  });
+}
 
 const port = Number(process.env.PORT_GATEWAY ?? 4000);
 const nonBlankStringPattern = "\\S";
@@ -337,9 +347,16 @@ export function createApp(dependencies: AppDependencies = {}): FastifyInstance {
       return;
     }
 
+    const requestId = getRequestId(request);
+    
+    if (sentryDsn) {
+      Sentry.setTag("request_id", requestId);
+      Sentry.captureException(error);
+    }
+
     request.log.error({
       service: "gateway",
-      request_id: getRequestId(request),
+      request_id: requestId,
       method: request.method,
       path: getRequestPath(request.url),
       event: "runtime_error",
