@@ -23,7 +23,8 @@ def map_emotion(signals: ExtractedSignals) -> EmotionMapping:
         return EmotionMapping(emotion=Emotion.EXCITED, intensity=0.9)
 
     if signals.has_positive_emoji:
-        return EmotionMapping(emotion=Emotion.HAPPY, intensity=0.7)
+        intensity = min(1.0, 0.5 + signals.positive_emoji_count * 0.2)
+        return EmotionMapping(emotion=Emotion.HAPPY, intensity=intensity)
 
     if signals.has_negative_emoji:
         return EmotionMapping(emotion=Emotion.SAD, intensity=0.7)
@@ -37,6 +38,7 @@ def map_emotion(signals: ExtractedSignals) -> EmotionMapping:
         return EmotionMapping(emotion=Emotion.EXCITED, intensity=0.8)
 
     if signals.has_exclamation:
-        return EmotionMapping(emotion=Emotion.HAPPY, intensity=0.5)
+        intensity = min(1.0, signals.exclamation_count * 0.5)
+        return EmotionMapping(emotion=Emotion.EXCITED, intensity=intensity)
 
     return EmotionMapping(emotion=Emotion.NEUTRAL, intensity=0.0)

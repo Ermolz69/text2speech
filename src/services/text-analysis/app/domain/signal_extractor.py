@@ -63,6 +63,7 @@ class ExtractedSignals:
     is_all_caps: bool
     exclamation_count: int
     question_count: int
+    positive_emoji_count: int
 
 
 def _count_pattern(text: str, pattern: str) -> int:
@@ -82,8 +83,10 @@ def extract_signals(text: str) -> ExtractedSignals:
     has_repeated_exclamation = "!!" in text
     has_repeated_question = "??" in text
     is_all_caps = bool(re.search(r"[A-Z]", text)) and text == text.upper()
+
     exclamation_count = _count_pattern(text, "!")
     question_count = _count_pattern(text, "?")
+    positive_emoji_count = sum(1 for emoji in (*POSITIVE_EMOTICONS, *POSITIVE_UNICODE_EMOJIS) if emoji in text)
 
     if has_exclamation:
         cues.append("punctuation:exclamation")
@@ -123,4 +126,5 @@ def extract_signals(text: str) -> ExtractedSignals:
         is_all_caps=is_all_caps,
         exclamation_count=exclamation_count,
         question_count=question_count,
+        positive_emoji_count=positive_emoji_count,
     )

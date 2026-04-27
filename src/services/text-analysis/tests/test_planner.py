@@ -20,23 +20,9 @@ def _default_signals(**overrides) -> ExtractedSignals:
         is_all_caps=False,
         exclamation_count=0,
         question_count=0,
+        positive_emoji_count=0,
     )
-    return ExtractedSignals(**{**base._asdict(), **overrides}) if hasattr(base, '_asdict') else ExtractedSignals(
-        cues=overrides.get('cues', base.cues),
-        has_exclamation=overrides.get('has_exclamation', base.has_exclamation),
-        has_question=overrides.get('has_question', base.has_question),
-        has_ellipsis=overrides.get('has_ellipsis', base.has_ellipsis),
-        has_positive_emoji=overrides.get('has_positive_emoji', base.has_positive_emoji),
-        has_negative_emoji=overrides.get('has_negative_emoji', base.has_negative_emoji),
-        has_surprise_emoji=overrides.get('has_surprise_emoji', base.has_surprise_emoji),
-        has_celebration_emoji=overrides.get('has_celebration_emoji', base.has_celebration_emoji),
-        has_mixed_punctuation=overrides.get('has_mixed_punctuation', base.has_mixed_punctuation),
-        has_repeated_exclamation=overrides.get('has_repeated_exclamation', base.has_repeated_exclamation),
-        has_repeated_question=overrides.get('has_repeated_question', base.has_repeated_question),
-        is_all_caps=overrides.get('is_all_caps', base.is_all_caps),
-        exclamation_count=overrides.get('exclamation_count', base.exclamation_count),
-        question_count=overrides.get('question_count', base.question_count),
-    )
+    return ExtractedSignals(**{**base.__dict__, **overrides})
 
 
 def test_plan_segment_combines_emotion_and_prosody_rules() -> None:
