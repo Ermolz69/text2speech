@@ -1,0 +1,194 @@
+{
+  "version": "1.0.0",
+  "description": "Benchmark corpus v1 for neutral, amplified, ambiguous, and multi-segment cases",
+  "categories": {
+    "neutral": {
+      "description": "Sentences with no emotional cues, standard declarative statements",
+      "items": [
+        {
+          "id": "neutral-001",
+          "text": "The meeting starts at nine o'clock tomorrow morning.",
+          "expected_emotion": "neutral",
+          "expected_intensity": 0.0,
+          "notes": "Standard factual statement"
+        },
+        {
+          "id": "neutral-002",
+          "text": "Please submit the report by Friday.",
+          "expected_emotion": "neutral",
+          "expected_intensity": 0.0,
+          "notes": "Simple instruction without emotional markers"
+        },
+        {
+          "id": "neutral-003",
+          "text": "The temperature today is twenty degrees Celsius.",
+          "expected_emotion": "neutral",
+          "expected_intensity": 0.0,
+          "notes": "Factual weather information"
+        },
+        {
+          "id": "neutral-004",
+          "text": "Dr. Johnson will see you now.",
+          "expected_emotion": "neutral",
+          "expected_intensity": 0.0,
+          "notes": "Contains abbreviation, should not split on period"
+        },
+        {
+          "id": "neutral-005",
+          "text": "The library is open from Monday to Saturday.",
+          "expected_emotion": "neutral",
+          "expected_intensity": 0.0,
+          "notes": "Standard informational statement"
+        }
+      ]
+    },
+    "amplified": {
+      "description": "Sentences with clear emotional cues via punctuation, emoji, or explicit markers",
+      "items": [
+        {
+          "id": "amplified-001",
+          "text": "I can't believe we won! 🎉🎉🎉",
+          "expected_emotion": "excited",
+          "expected_intensity": 0.9,
+          "notes": "Multiple exclamation marks and celebration emojis"
+        },
+        {
+          "id": "amplified-002",
+          "text": "This is absolutely terrible... I'm so disappointed.",
+          "expected_emotion": "sad",
+          "expected_intensity": 0.2,
+          "notes": "Ellipsis triggers sad emotion at low intensity"
+        },
+        {
+          "id": "amplified-003",
+          "text": "STOP RIGHT NOW!!! 😡",
+          "expected_emotion": "sad",
+          "expected_intensity": 0.7,
+          "notes": "Negative emoji triggers sad emotion"
+        },
+        {
+          "id": "amplified-004",
+          "text": "Oh my god, I'm so scared... please help me!",
+          "expected_emotion": "sad",
+          "expected_intensity": 0.2,
+          "notes": "Ellipsis triggers sad emotion at low intensity"
+        },
+        {
+          "id": "amplified-005",
+          "text": "Wow!!! That's incredible! 😱✨",
+          "expected_emotion": "happy",
+          "expected_intensity": 0.5,
+          "notes": "Exclamation mark triggers happy emotion"
+        }
+      ]
+    },
+    "ambiguous": {
+      "description": "Sentences where emotion is unclear or mixed, requiring careful interpretation",
+      "items": [
+        {
+          "id": "ambiguous-001",
+          "text": "Oh. Great. Another meeting.",
+          "expected_emotion": "neutral",
+          "expected_intensity": 0.2,
+          "notes": "Could be sarcastic; periods after each word suggest dry delivery"
+        },
+        {
+          "id": "ambiguous-002",
+          "text": "I'm fine... really.",
+          "expected_emotion": "sad",
+          "expected_intensity": 0.3,
+          "notes": "Ellipsis suggests hesitation, 'really' implies the opposite"
+        },
+        {
+          "id": "ambiguous-003",
+          "text": "Sure, whatever you say.",
+          "expected_emotion": "neutral",
+          "expected_intensity": 0.1,
+          "notes": "Could be passive-aggressive or genuinely agreeable"
+        },
+        {
+          "id": "ambiguous-004",
+          "text": "That's... interesting.",
+          "expected_emotion": "sad",
+          "expected_intensity": 0.2,
+          "notes": "Ellipsis triggers sad emotion"
+        },
+        {
+          "id": "ambiguous-005",
+          "text": "Well, that happened. 😐",
+          "expected_emotion": "neutral",
+          "expected_intensity": 0.1,
+          "notes": "Neutral emoji, understated delivery"
+        }
+      ]
+    },
+    "multi-segment": {
+      "description": "Texts with multiple sentences/segments requiring proper segmentation and per-segment emotion",
+      "items": [
+        {
+          "id": "multi-001",
+          "text": "Good morning! Today is a beautiful day. Let's enjoy it! 🌞",
+          "expected_segments": [
+            { "text": "Good morning!", "emotion": "happy", "intensity": 0.5 },
+            { "text": "Today is a beautiful day.", "emotion": "neutral", "intensity": 0.0 },
+            { "text": "Let's enjoy it! 🌞", "emotion": "excited", "intensity": 0.8 }
+          ],
+          "notes": "Three segments with varying emotion"
+        },
+        {
+          "id": "multi-002",
+          "text": "Wait... What happened? I don't understand.",
+          "expected_segments": [
+            { "text": "Wait...", "emotion": "sad", "intensity": 0.2 },
+            { "text": "What happened?", "emotion": "neutral", "intensity": 0.0 },
+            { "text": "I don't understand.", "emotion": "neutral", "intensity": 0.0 }
+          ],
+          "notes": "First segment has ellipsis triggering sad"
+        },
+        {
+          "id": "multi-003",
+          "text": "Dr. Smith arrived late. The meeting had already started. He apologized profusely.",
+          "expected_segments": [
+            { "text": "Dr. Smith arrived late.", "emotion": "neutral", "intensity": 0.0 },
+            { "text": "The meeting had already started.", "emotion": "neutral", "intensity": 0.0 },
+            { "text": "He apologized profusely.", "emotion": "neutral", "intensity": 0.0 }
+          ],
+          "notes": "All neutral segments"
+        },
+        {
+          "id": "multi-004",
+          "text": "I'm so excited! 🎊 We're going to Paris! Can you believe it?!",
+          "expected_segments": [
+            { "text": "I'm so excited! 🎊", "emotion": "excited", "intensity": 0.9 },
+            { "text": "We're going to Paris!", "emotion": "happy", "intensity": 0.5 },
+            { "text": "Can you believe it?!", "emotion": "surprised", "intensity": 0.7 }
+          ],
+          "notes": "Mixed emotions with celebration and surprise"
+        },
+        {
+          "id": "multi-005",
+          "text": "The results are in. It's not good news... We'll need to regroup tomorrow.",
+          "expected_segments": [
+            { "text": "The results are in.", "emotion": "neutral", "intensity": 0.0 },
+            { "text": "It's not good news...", "emotion": "sad", "intensity": 0.2 },
+            { "text": "We'll need to regroup tomorrow.", "emotion": "neutral", "intensity": 0.0 }
+          ],
+          "notes": "Middle segment has ellipsis triggering sad"
+        }
+      ]
+    }
+  },
+  "metadata": {
+    "created": "2026-04-27",
+    "author": "benchmark-corpus-v1",
+    "related_issue": "#34",
+    "emotion_labels": ["neutral", "happy", "sad", "angry", "calm", "excited", "surprised"],
+    "intensity_range": { "min": 0.0, "max": 1.0 },
+    "usage_notes": [
+      "Each item should be run through the text-analysis service",
+      "Compare actual emotion and intensity against expected values",
+      "For multi-segment items, verify segmentation matches expected_segments",
+      "Ambiguous cases may have tolerance of ±0.2 on intensity"
+    ]
+  }
+}
