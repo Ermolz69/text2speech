@@ -22,6 +22,7 @@ import {
   TtsAdapterClientError,
   type TtsAdapterClient,
 } from "./ttsAdapterClient.js";
+import { register, httpRequestsTotal, httpRequestDurationSeconds, ttsSynthesisRequestsTotal, ttsSynthesisDurationSeconds, textAnalysisRequestsTotal, textAnalysisDurationSeconds } from "./metrics.js";
 
 const sentryDsn = process.env.SENTRY_DSN;
 if (sentryDsn) {
@@ -319,6 +320,14 @@ export function createApp(dependencies: AppDependencies = {}): FastifyInstance {
 
   app.addHook("onResponse", async (request, reply) => {
     const durationMs = Number(reply.elapsedTime.toFixed(2));
+    const durationSec = durationMs / 1000;
+    const path = getRequestPath(request.url);
+    const method = request.method;
+    const status = reply.statusCode;
+    
+    httpRequestsTotal.inc({ method, path, status });
+    httpRequestDurationSeconds.observe({ method, path }, durationSec);
+    
     logStructuredEvent(request, {
       event: "request_finished",
       status: reply.statusCode,
@@ -376,6 +385,11 @@ export function createApp(dependencies: AppDependencies = {}): FastifyInstance {
 
   app.get("/health", async () => ({ status: "ok", service: "gateway" }));
 
+  app.get("/metrics", async (request, reply) => {
+    reply.header("Content-Type", register.contentType);
+    return register.metrics();
+  });
+
   app.post<{ Body: AnalyzeRequestDto; Reply: AnalyzeResponseDto | ApiErrorResponse }>(
     "/api/analyze",
     {
@@ -385,12 +399,16 @@ export function createApp(dependencies: AppDependencies = {}): FastifyInstance {
     },
     async (request, reply) => {
       const requestId = getRequestId(request);
+      const startTime = Date.now();
       try {
         logStructuredEvent(request, {
           event: "upstream_request_started",
           upstream: "text-analysis",
         });
         const response = await textAnalysisClient.analyze(request.body, { requestId });
+        const durationSec = (Date.now() - startTime) / 1000;
+        textAnalysisRequestsTotal.inc();
+        textAnalysisDurationSeconds.observe(durationSec);
         logStructuredEvent(request, {
           event: "analyze_completed",
           status: 200,
@@ -398,6 +416,9 @@ export function createApp(dependencies: AppDependencies = {}): FastifyInstance {
         });
         return response;
       } catch (error) {
+        const durationSec = (Date.now() - startTime) / 1000;
+        textAnalysisRequestsTotal.inc();
+        textAnalysisDurationSeconds.observe(durationSec);
         if (error instanceof TextAnalysisClientError) {
           logStructuredEvent(request, {
             event: "upstream_request_failed",
@@ -471,6 +492,7 @@ export function createApp(dependencies: AppDependencies = {}): FastifyInstance {
     async (request, reply) => {
       const requestId = getRequestId(request);
       let analyzeResponse: AnalyzeResponseDto;
+      const analyzeStartTime = Date.now();
 
       try {
         logStructuredEvent(request, {
@@ -481,12 +503,18 @@ export function createApp(dependencies: AppDependencies = {}): FastifyInstance {
           { text: request.body.text },
           { requestId }
         );
+        const analyzeDurationSec = (Date.now() - analyzeStartTime) / 1000;
+        textAnalysisRequestsTotal.inc();
+        textAnalysisDurationSeconds.observe(analyzeDurationSec);
         logStructuredEvent(request, {
           event: "analyze_completed",
           status: 200,
           segment_count: analyzeResponse.segments.length,
         });
       } catch (error) {
+        const analyzeDurationSec = (Date.now() - analyzeStartTime) / 1000;
+        textAnalysisRequestsTotal.inc();
+        textAnalysisDurationSeconds.observe(analyzeDurationSec);
         if (error instanceof TextAnalysisClientError) {
           logTextAnalysisClientError(error, request.log);
           logStructuredEvent(request, {
@@ -506,12 +534,16 @@ export function createApp(dependencies: AppDependencies = {}): FastifyInstance {
         throw error;
       }
 
+      const synthesisStartTime = Date.now();
       try {
+        ttsSynthesisRequestsTotal.inc();
         const synthesizeRequest = buildSynthesizePipelineRequest(request.body, analyzeResponse);
         logStructuredEvent(request, { event: "upstream_request_started", upstream: "tts-adapter" });
         const synthesisResponse = await ttsAdapterClient.synthesize(synthesizeRequest, {
           requestId,
         });
+        const synthesisDurationSec = (Date.now() - synthesisStartTime) / 1000;
+        ttsSynthesisDurationSeconds.observe(synthesisDurationSec);
         const gatewayAudioUrl = toGatewayAudioUrl(synthesisResponse.audioUrl);
         logStructuredEvent(request, {
           event: "synthesize_completed",
@@ -525,6 +557,8 @@ export function createApp(dependencies: AppDependencies = {}): FastifyInstance {
           audioUrl: gatewayAudioUrl,
         };
       } catch (error) {
+        const synthesisDurationSec = (Date.now() - synthesisStartTime) / 1000;
+        ttsSynthesisDurationSeconds.observe(synthesisDurationSec);
         if (error instanceof TtsAdapterClientError) {
           logTtsAdapterClientError(error, request.log);
           logStructuredEvent(request, {
