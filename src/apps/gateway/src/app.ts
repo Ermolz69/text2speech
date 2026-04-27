@@ -22,7 +22,15 @@ import {
   TtsAdapterClientError,
   type TtsAdapterClient,
 } from "./ttsAdapterClient.js";
-import { register, httpRequestsTotal, httpRequestDurationSeconds, ttsSynthesisRequestsTotal, ttsSynthesisDurationSeconds, textAnalysisRequestsTotal, textAnalysisDurationSeconds } from "./metrics.js";
+import {
+  register,
+  httpRequestsTotal,
+  httpRequestDurationSeconds,
+  ttsSynthesisRequestsTotal,
+  ttsSynthesisDurationSeconds,
+  textAnalysisRequestsTotal,
+  textAnalysisDurationSeconds,
+} from "./metrics.js";
 
 const sentryDsn = process.env.SENTRY_DSN;
 if (sentryDsn) {
@@ -324,10 +332,10 @@ export function createApp(dependencies: AppDependencies = {}): FastifyInstance {
     const path = getRequestPath(request.url);
     const method = request.method;
     const status = reply.statusCode;
-    
+
     httpRequestsTotal.inc({ method, path, status });
     httpRequestDurationSeconds.observe({ method, path }, durationSec);
-    
+
     logStructuredEvent(request, {
       event: "request_finished",
       status: reply.statusCode,
@@ -357,7 +365,7 @@ export function createApp(dependencies: AppDependencies = {}): FastifyInstance {
     }
 
     const requestId = getRequestId(request);
-    
+
     if (sentryDsn) {
       Sentry.setTag("request_id", requestId);
       Sentry.captureException(error);

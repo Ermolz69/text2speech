@@ -1,9 +1,9 @@
 apiVersion: 1
 
 providers:
-  - name: 'TTS Dashboards'
+  - name: "TTS Dashboards"
     orgId: 1
-    folder: ''
+    folder: ""
     type: file
     disableDeletion: false
     editable: true

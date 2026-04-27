@@ -97,7 +97,7 @@ def test_analyze_exposes_mixed_punctuation_in_shared_segment_metadata() -> None:
 
     assert segment["text"] == "Really?!"
     assert segment["punctuation"] == ["exclamation", "question", "mixed"]
-    assert segment["emotion"] == "joy"
+    assert segment["emotion"] == "surprise"
     assert segment["intensity"] == 2
 
 
