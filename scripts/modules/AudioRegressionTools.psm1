@@ -252,4 +252,153 @@ function Assert-BaselineContrast {
   return $checks
 }
 
-Export-ModuleMember -Function Invoke-WithRetry, Invoke-JsonGet, Invoke-JsonPost, Get-ReadinessJson, Invoke-AudioDownload, Get-WavDurationMs, Get-DockerCommandLine, Get-Average, Assert-ServiceIdentity, Assert-AnalyzeResponse, Assert-SynthesisResponse, Get-BaselineContrastChecks, Get-BaselineListeningChecklist, Assert-BaselineContrast
+function Invoke-NeutralSynthesis {
+  param(
+    [string]$WebUrl,
+    [string]$Text,
+    [string]$VoiceId = 'voice-1'
+  )
+
+  Invoke-WithRetry -OperationName "neutral synthesis" -Action {
+    Invoke-JsonPost "$WebUrl/api/tts" @{
+      text = $Text
+      voiceId = $VoiceId
+      metadata = @{ format = 'wav'; emotion = 'neutral'; intensity = 0 }
+    }
+  }
+}
+
+function Invoke-ExpressiveSynthesis {
+  param(
+    [string]$WebUrl,
+    [string]$Text,
+    [string]$VoiceId = 'voice-1'
+  )
+
+  Invoke-WithRetry -OperationName "expressive synthesis" -Action {
+    Invoke-JsonPost "$WebUrl/api/tts" @{
+      text = $Text
+      voiceId = $VoiceId
+      metadata = @{ format = 'wav' }
+    }
+  }
+}
+
+function Compute-BenchmarkMetrics {
+  param(
+    [object[]]$PromptResults
+  )
+
+  $metrics = @()
+  foreach ($result in $PromptResults) {
+    $neutralDurationMs = $result.neutralWavDurationMs
+    $expressiveDurationMs = $result.expressiveWavDurationMs
+    $durationDeltaMs = [math]::Round(($expressiveDurationMs - $neutralDurationMs), 2)
+
+    $neutralBytes = $result.neutralWavBytes
+    $expressiveBytes = $result.expressiveWavBytes
+    $bytesDelta = $expressiveBytes - $neutralBytes
+
+    $neutralSegments = $result.neutralSegmentCount
+    $expressiveSegments = $result.expressiveSegmentCount
+    $segmentDelta = $expressiveSegments - $neutralSegments
+
+    $metrics += [pscustomobject]@{
+      promptId = $result.promptId
+      promptTitle = $result.promptTitle
+      neutralWavBytes = $neutralBytes
+      expressiveWavBytes = $expressiveBytes
+      bytesDelta = $bytesDelta
+      neutralWavDurationMs = $neutralDurationMs
+      expressiveWavDurationMs = $expressiveDurationMs
+      durationDeltaMs = $durationDeltaMs
+      neutralSegmentCount = $neutralSegments
+      expressiveSegmentCount = $expressiveSegments
+      segmentDelta = $segmentDelta
+      neutralEmotions = $result.neutralEmotions
+      expressiveEmotions = $result.expressiveEmotions
+    }
+  }
+
+  $totalNeutralBytes = ($metrics | Measure-Object -Property neutralWavBytes -Sum).Sum
+  $totalExpressiveBytes = ($metrics | Measure-Object -Property expressiveWavBytes -Sum).Sum
+  $avgNeutralDuration = Get-Average @($metrics | ForEach-Object { $_.neutralWavDurationMs })
+  $avgExpressiveDuration = Get-Average @($metrics | ForEach-Object { $_.expressiveWavDurationMs })
+  $avgDurationDelta = Get-Average @($metrics | ForEach-Object { $_.durationDeltaMs })
+
+  return [pscustomobject]@{
+    perPrompt = $metrics
+    totalPrompts = $metrics.Count
+    totalNeutralBytes = $totalNeutralBytes
+    totalExpressiveBytes = $totalExpressiveBytes
+    avgNeutralDurationMs = $avgNeutralDuration
+    avgExpressiveDurationMs = $avgExpressiveDuration
+    avgDurationDeltaMs = $avgDurationDelta
+  }
+}
+
+function Write-BenchmarkReport {
+  param(
+    [object]$Metrics,
+    [string]$ReportPath,
+    [string]$SummaryPath,
+    [string]$GeneratedAt,
+    [string]$WebUrl,
+    [string]$CorpusPath
+  )
+
+  $reportLines = @(
+    '# Neutral vs Expressive Synthesis Benchmark Report',
+    '',
+    "Generated at: $GeneratedAt",
+    "Web URL: $WebUrl",
+    "Corpus: $CorpusPath",
+    '',
+    '## Summary',
+    '',
+    "- Total prompts: $($Metrics.totalPrompts)",
+    "- Total neutral audio size: $($Metrics.totalNeutralBytes) bytes",
+    "- Total expressive audio size: $($Metrics.totalExpressiveBytes) bytes",
+    "- Avg neutral duration: $($Metrics.avgNeutralDurationMs) ms",
+    "- Avg expressive duration: $($Metrics.avgExpressiveDurationMs) ms",
+    "- Avg duration delta (expressive - neutral): $($Metrics.avgDurationDeltaMs) ms",
+    '',
+    '## Per-Prompt Comparison',
+    '',
+    '| ID | Title | Neutral (ms) | Expressive (ms) | Delta (ms) | Neutral (bytes) | Expressive (bytes) | Neutral Segments | Expressive Segments |',
+    '| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |'
+  )
+
+  foreach ($m in $Metrics.perPrompt) {
+    $reportLines += "| $($m.promptId) | $($m.promptTitle) | $($m.neutralWavDurationMs) | $($m.expressiveWavDurationMs) | $($m.durationDeltaMs) | $($m.neutralWavBytes) | $($m.expressiveWavBytes) | $($m.neutralSegmentCount) | $($m.expressiveSegmentCount) |"
+  }
+
+  $reportLines += ''
+  $reportLines += '## Emotion Distribution'
+  $reportLines += ''
+  $reportLines += '| ID | Title | Neutral Emotions | Expressive Emotions |'
+  $reportLines += '| --- | --- | --- | --- |'
+
+  foreach ($m in $Metrics.perPrompt) {
+    $reportLines += "| $($m.promptId) | $($m.promptTitle) | $($m.neutralEmotions) | $($m.expressiveEmotions) |"
+  }
+
+  $reportLines | Set-Content $ReportPath
+
+  $summary = [pscustomobject]@{
+    generatedAt = $GeneratedAt
+    webUrl = $WebUrl
+    corpusPath = $CorpusPath
+    totalPrompts = $Metrics.totalPrompts
+    totalNeutralBytes = $Metrics.totalNeutralBytes
+    totalExpressiveBytes = $Metrics.totalExpressiveBytes
+    avgNeutralDurationMs = $Metrics.avgNeutralDurationMs
+    avgExpressiveDurationMs = $Metrics.avgExpressiveDurationMs
+    avgDurationDeltaMs = $Metrics.avgDurationDeltaMs
+    perPrompt = $Metrics.perPrompt
+  }
+
+  $summary | ConvertTo-Json -Depth 12 | Set-Content $SummaryPath
+}
+
+Export-ModuleMember -Function Invoke-WithRetry, Invoke-JsonGet, Invoke-JsonPost, Get-ReadinessJson, Invoke-AudioDownload, Get-WavDurationMs, Get-DockerCommandLine, Get-Average, Assert-ServiceIdentity, Assert-AnalyzeResponse, Assert-SynthesisResponse, Get-BaselineContrastChecks, Get-BaselineListeningChecklist, Assert-BaselineContrast, Invoke-NeutralSynthesis, Invoke-ExpressiveSynthesis, Compute-BenchmarkMetrics, Write-BenchmarkReport
