@@ -21,6 +21,8 @@ def test_plan_segment_combines_emotion_and_prosody_rules() -> None:
             has_mixed_punctuation=False,
             has_repeated_exclamation=False,
             has_repeated_question=False,
+            exclamation_count=1,
+            positive_emoji_count=1,
         ),
     )
 
@@ -50,6 +52,8 @@ def test_plan_segment_makes_exclamation_more_audible_than_neutral() -> None:
             has_mixed_punctuation=False,
             has_repeated_exclamation=False,
             has_repeated_question=False,
+            exclamation_count=0,
+            positive_emoji_count=0,
         ),
     )
     emphatic = plan_segment(
@@ -63,6 +67,8 @@ def test_plan_segment_makes_exclamation_more_audible_than_neutral() -> None:
             has_mixed_punctuation=False,
             has_repeated_exclamation=False,
             has_repeated_question=False,
+            exclamation_count=1,
+            positive_emoji_count=0,
         ),
     )
 
@@ -83,6 +89,8 @@ def test_plan_segment_keeps_ellipsis_more_subtle_than_before() -> None:
             has_mixed_punctuation=False,
             has_repeated_exclamation=False,
             has_repeated_question=False,
+            exclamation_count=0,
+            positive_emoji_count=0,
         ),
     )
 
@@ -104,6 +112,8 @@ def test_plan_segment_amplifies_repeated_exclamation_more_than_single_exclamatio
             has_mixed_punctuation=False,
             has_repeated_exclamation=False,
             has_repeated_question=False,
+            exclamation_count=1,
+            positive_emoji_count=0,
         ),
     )
     repeated = plan_segment(
@@ -117,6 +127,8 @@ def test_plan_segment_amplifies_repeated_exclamation_more_than_single_exclamatio
             has_mixed_punctuation=False,
             has_repeated_exclamation=True,
             has_repeated_question=False,
+            exclamation_count=3,
+            positive_emoji_count=0,
         ),
     )
 
@@ -136,6 +148,8 @@ def test_plan_segment_makes_mixed_punctuation_more_expressive_than_plain_exclama
             has_mixed_punctuation=False,
             has_repeated_exclamation=False,
             has_repeated_question=False,
+            exclamation_count=1,
+            positive_emoji_count=0,
         ),
     )
     mixed = plan_segment(
@@ -149,6 +163,8 @@ def test_plan_segment_makes_mixed_punctuation_more_expressive_than_plain_exclama
             has_mixed_punctuation=True,
             has_repeated_exclamation=False,
             has_repeated_question=False,
+            exclamation_count=1,
+            positive_emoji_count=0,
         ),
     )
 
