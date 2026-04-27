@@ -30,6 +30,9 @@ services:
       - TEXT_ANALYSIS_URL=http://text-analysis:8001
       - TTS_ADAPTER_URL=http://tts-adapter:8002
       - TTS_ADAPTER_TIMEOUT_MS=${TTS_ADAPTER_TIMEOUT_MS:-15000}
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - SENTRY_TRACES_SAMPLE_RATE=${SENTRY_TRACES_SAMPLE_RATE:-0.1}
+      - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
     depends_on:
       text-analysis:
         condition: service_healthy
@@ -52,6 +55,9 @@ services:
       dockerfile: ./docker/Dockerfile.text-analysis
     environment:
       - PORT_TEXT_ANALYSIS=${PORT_TEXT_ANALYSIS:-8001}
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - SENTRY_TRACES_SAMPLE_RATE=${SENTRY_TRACES_SAMPLE_RATE:-0.1}
+      - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
     ports:
       - "${PORT_TEXT_ANALYSIS:-8001}:8001"
     healthcheck:
@@ -75,6 +81,9 @@ services:
       - PIPER_MODEL_PATH=${PIPER_MODEL_PATH:-/models/piper/model.onnx}
       - FFMPEG_BIN=${FFMPEG_BIN:-/usr/bin/ffmpeg}
       - TTS_OUTPUT_DIR=/app/generated-audio
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - SENTRY_TRACES_SAMPLE_RATE=${SENTRY_TRACES_SAMPLE_RATE:-0.1}
+      - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
     volumes:
       - ${PIPER_MODEL_DIR:-./models/piper}:/models/piper:ro
       - ${TTS_OUTPUT_DIR:-./src/services/tts-adapter/generated-audio}:/app/generated-audio

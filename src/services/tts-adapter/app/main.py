@@ -2,19 +2,36 @@
 
 import json
 import logging
+import os
 import time
 from typing import Any
 from uuid import uuid4
 
+import sentry_sdk
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from sentry_sdk.integrations.fastapi import FastApiIntegration
+from sentry_sdk.integrations.starlette import StarletteIntegration
 
 from app.http.contracts import SynthesizeRequestDto, SynthesizeResponseDto, to_internal_segments
 from app.models.segment import SegmentMetadata
 from app.providers import PiperSynthesisProvider, SynthesisProvider
 from app.providers.piper import DEFAULT_AUDIO_ROUTE, resolve_audio_output_dir
+
+sentry_dsn = os.environ.get("SENTRY_DSN")
+if sentry_dsn:
+    sentry_sdk.init(
+        dsn=sentry_dsn,
+        integrations=[
+            StarletteIntegration(),
+            FastApiIntegration(),
+        ],
+        traces_sample_rate=float(os.environ.get("SENTRY_TRACES_SAMPLE_RATE", "0.1")),
+        send_default_pii=True,
+        environment=os.environ.get("SENTRY_ENVIRONMENT", "production"),
+    )
 
 app = FastAPI(title="TTS Adapter Service")
 request_id_header_name = "X-Request-Id"
@@ -162,8 +179,14 @@ async def handle_validation_error(
 @app.exception_handler(Exception)
 async def handle_runtime_error(
     request: Request,
-    _: Exception,
+    exc: Exception,
 ) -> JSONResponse:
+    request_id = get_request_id(request)
+    
+    if sentry_dsn:
+        sentry_sdk.set_tag("request_id", request_id)
+        sentry_sdk.capture_exception(exc)
+    
     response = JSONResponse(
         status_code=500,
         content=create_api_error_response(
@@ -173,7 +196,7 @@ async def handle_runtime_error(
             path=request.url.path,
         ),
     )
-    response.headers[request_id_header_name] = get_request_id(request)
+    response.headers[request_id_header_name] = request_id
     log_event(request, event="runtime_error", status=500, error_code="internal_error")
     return response
 
