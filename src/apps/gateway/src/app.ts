@@ -41,15 +41,6 @@ if (sentryDsn) {
   });
 }
 
-const sentryDsn = process.env.SENTRY_DSN;
-if (sentryDsn) {
-  Sentry.init({
-    dsn: sentryDsn,
-    tracesSampleRate: parseFloat(process.env.SENTRY_TRACES_SAMPLE_RATE ?? "0.1"),
-    environment: process.env.SENTRY_ENVIRONMENT ?? "production",
-  });
-}
-
 const port = Number(process.env.PORT_GATEWAY ?? 4000);
 const nonBlankStringPattern = "\\S";
 const requestIdHeaderName = "X-Request-Id";
