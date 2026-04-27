@@ -15,7 +15,6 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.domain.service import analyze_text
-from app.models.segment import Emotion
 
 CORPUS_PATH = Path(__file__).parent.parent.parent.parent.parent / "benchmarks" / "corpus_v1.json"
 INTENSITY_TOLERANCE = 0.25
