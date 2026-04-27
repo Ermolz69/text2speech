@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "fastify": "^4.26.2",
+    "prom-client": "^15.1.0",
     "shared": "workspace:*",
     "zod": "^3.23.0"
   },

@@ -7,11 +7,43 @@ from uuid import uuid4
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
+from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 
 from app.domain import analyze_text
 from app.http.contracts import AnalyzeRequestDto, AnalyzeResponseDto, to_analyze_response_dto
 from app.http.errors import create_api_error_response, validation_error_details
+
+app = FastAPI(title="Text Analysis Service")
+request_id_header_name = "X-Request-Id"
+
+http_requests_total = Counter(
+    'http_requests_total',
+    'Total number of HTTP requests',
+    ['method', 'path', 'status']
+)
+
+http_request_duration_seconds = Histogram(
+    'http_request_duration_seconds',
+    'HTTP request duration in seconds',
+    ['method', 'path']
+)
+
+text_analysis_requests_total = Counter(
+    'text_analysis_requests_total',
+    'Total number of text analysis requests'
+)
+
+text_analysis_duration_seconds = Histogram(
+    'text_analysis_duration_seconds',
+    'Text analysis duration in seconds'
+)
+
+text_analysis_emotion_total = Counter(
+    'text_analysis_emotion_total',
+    'Total number of emotions detected',
+    ['emotion']
+)
 
 app = FastAPI(title="Text Analysis Service")
 request_id_header_name = "X-Request-Id"
@@ -79,11 +111,21 @@ async def add_request_context(request: Request, call_next):
 
     response = await call_next(request)
     response.headers[request_id_header_name] = request_id
+    
+    duration_ms = (time.perf_counter() - started_at) * 1000
+    duration_sec = duration_ms / 1000
+    method = request.method
+    path = request.url.path
+    status = response.status_code
+    
+    http_requests_total.labels(method=method, path=path, status=status).inc()
+    http_request_duration_seconds.labels(method=method, path=path).observe(duration_sec)
+    
     log_event(
         request,
         event="request_finished",
-        status=response.status_code,
-        duration_ms=(time.perf_counter() - started_at) * 1000,
+        status=status,
+        duration_ms=duration_ms,
     )
     return response
 
@@ -133,12 +175,27 @@ def health(request: Request) -> dict:
     return {"status": "ok", "service": "text-analysis"}
 
 
+@app.get("/metrics")
+def metrics():
+    return PlainTextResponse(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
 @app.post("/analyze", response_model=AnalyzeResponseDto, response_model_exclude_none=True)
 def analyze(payload: AnalyzeRequestDto, request: Request) -> AnalyzeResponseDto:
     if request.headers.get("x-force-error") == "1":
         raise RuntimeError("Forced test runtime error")
 
+    started_at = time.perf_counter()
     response = to_analyze_response_dto(analyze_text(payload.text))
+    duration_sec = time.perf_counter() - started_at
+    
+    text_analysis_requests_total.inc()
+    text_analysis_duration_seconds.observe(duration_sec)
+    
+    for segment in response.segments:
+        if hasattr(segment, 'emotion') and segment.emotion:
+            text_analysis_emotion_total.labels(emotion=segment.emotion).inc()
+    
     log_event(
         request,
         event="analyze_completed",

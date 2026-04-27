@@ -8,13 +8,44 @@ from uuid import uuid4
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
+from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 
 from app.http.contracts import SynthesizeRequestDto, SynthesizeResponseDto, to_internal_segments
 from app.models.segment import SegmentMetadata
 from app.providers import PiperSynthesisProvider, SynthesisProvider
 from app.providers.piper import DEFAULT_AUDIO_ROUTE, resolve_audio_output_dir
+
+app = FastAPI(title="TTS Adapter Service")
+request_id_header_name = "X-Request-Id"
+app.mount(
+    DEFAULT_AUDIO_ROUTE,
+    StaticFiles(directory=resolve_audio_output_dir(), check_dir=False),
+    name="generated-audio",
+)
+
+http_requests_total = Counter(
+    'http_requests_total',
+    'Total number of HTTP requests',
+    ['method', 'path', 'status']
+)
+
+http_request_duration_seconds = Histogram(
+    'http_request_duration_seconds',
+    'HTTP request duration in seconds',
+    ['method', 'path']
+)
+
+tts_synthesis_requests_total = Counter(
+    'tts_synthesis_requests_total',
+    'Total number of TTS synthesis requests'
+)
+
+tts_synthesis_duration_seconds = Histogram(
+    'tts_synthesis_duration_seconds',
+    'TTS synthesis duration in seconds'
+)
 
 app = FastAPI(title="TTS Adapter Service")
 request_id_header_name = "X-Request-Id"
@@ -93,11 +124,21 @@ async def add_request_context(request: Request, call_next):
 
     response = await call_next(request)
     response.headers[request_id_header_name] = request_id
+    
+    duration_ms = (time.perf_counter() - started_at) * 1000
+    duration_sec = duration_ms / 1000
+    method = request.method
+    path = request.url.path
+    status = response.status_code
+    
+    http_requests_total.labels(method=method, path=path, status=status).inc()
+    http_request_duration_seconds.labels(method=method, path=path).observe(duration_sec)
+    
     log_event(
         request,
         event="request_finished",
-        status=response.status_code,
-        duration_ms=(time.perf_counter() - started_at) * 1000,
+        status=status,
+        duration_ms=duration_ms,
     )
     return response
 
@@ -211,6 +252,11 @@ def health(request: Request) -> dict[str, Any]:
     return payload
 
 
+@app.get("/metrics")
+def metrics():
+    return PlainTextResponse(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
 @app.get("/health/ready")
 def health_ready(request: Request) -> JSONResponse:
     provider = get_synthesis_provider(request)
@@ -241,8 +287,14 @@ def synthesize(payload: SynthesizeRequestDto, request: Request) -> SynthesizeRes
     if request.headers.get("x-force-error") == "1":
         raise RuntimeError("Forced test runtime error")
 
+    started_at = time.perf_counter()
     segments: list[SegmentMetadata] = to_internal_segments(payload)
     result = get_synthesis_provider(request).synthesize(segments)
+    duration_sec = time.perf_counter() - started_at
+    
+    tts_synthesis_requests_total.inc()
+    tts_synthesis_duration_seconds.observe(duration_sec)
+    
     filename = result.audio_url.rsplit("/", 1)[-1] if "/" in result.audio_url else result.audio_url
     log_event(
         request,

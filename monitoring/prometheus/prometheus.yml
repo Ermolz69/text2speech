@@ -1,0 +1,25 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'gateway'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['gateway:4000']
+        labels:
+          service: 'gateway'
+
+  - job_name: 'text-analysis'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['text-analysis:8001']
+        labels:
+          service: 'text-analysis'
+
+  - job_name: 'tts-adapter'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['tts-adapter:8002']
+        labels:
+          service: 'tts-adapter'
