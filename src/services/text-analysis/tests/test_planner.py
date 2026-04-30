@@ -1,4 +1,3 @@
-from app.domain.mapper import map_emotion
 from app.domain.planner import plan_segment
 from app.domain.signal_extractor import ExtractedSignals
 

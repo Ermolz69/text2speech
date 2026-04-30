@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import io
 import subprocess
+import wave as _wave
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -12,7 +14,18 @@ from app.providers.piper import PiperSynthesisProvider, resolve_audio_output_dir
 client = TestClient(app, raise_server_exceptions=False)
 
 
-WAV_BYTES = b"RIFF\x24\x00\x00\x00WAVEfmt "
+def _make_wav_bytes(num_samples: int = 4) -> bytes:
+    """Return a minimal valid PCM WAV with silence frames."""
+    buf = io.BytesIO()
+    with _wave.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(22050)
+        wf.writeframes(b"\x00\x00" * num_samples)
+    return buf.getvalue()
+
+
+WAV_BYTES = _make_wav_bytes()
 
 
 def test_piper_provider_reports_not_ready_when_model_is_missing(tmp_path: Path) -> None:
@@ -68,16 +81,15 @@ def test_piper_provider_invokes_cli_and_returns_generated_audio_url(
     assert result.total_pause_ms == 200
     assert result.audio_url.startswith("/audio/")
     assert result.audio_url.endswith(".wav")
-    assert calls == [
-        {
-            "command": calls[0]["command"],
-            "input": "Hello! How are you?",
-            "text": True,
-            "capture_output": True,
-            "check": True,
-        }
-    ]
-    assert calls[0]["command"][:3] == ["piper-bin", "--model", str(model_path)]
+
+    assert len(calls) == 2
+    assert calls[0]["input"] == "Hello!"
+    assert calls[1]["input"] == "How are you?"
+    for call in calls:
+        assert call["command"][:3] == ["piper-bin", "--model", str(model_path)]
+        assert call["text"] is True
+        assert call["capture_output"] is True
+        assert call["check"] is True
 
 
 def test_synthesize_serves_generated_wav_from_piper_provider(monkeypatch, tmp_path: Path) -> None:
