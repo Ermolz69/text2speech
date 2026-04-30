@@ -1,17 +1,26 @@
 from __future__ import annotations
 
+import logging
 import os
 import shutil
 import subprocess
+import wave
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 from app.models.segment import SegmentMetadata
 from app.providers.base import SynthesisProvider, SynthesisResult
+from app.emotion_noise_scale import get_noise_scale
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_AUDIO_ROUTE = "/audio"
 DEFAULT_AUDIO_OUTPUT_DIR = Path(__file__).resolve().parents[2] / "generated-audio"
+
+_DEFAULT_NOISE_SCALE: float = 0.333
+_DEFAULT_LENGTH_SCALE: float = 1.0
+_DEFAULT_NOISE_W: float = 0.8
 
 
 def resolve_audio_output_dir(output_dir: str | Path | None = None) -> Path:
@@ -41,7 +50,6 @@ class PiperSynthesisProvider(SynthesisProvider):
         binary_available = self._binary_available()
         model_configured = self.model_path is not None
         model_exists = bool(self.model_path and self.model_path.exists())
-
         return {
             "piper_bin": self.piper_bin,
             "model_path": str(self.model_path) if self.model_path is not None else None,
@@ -53,7 +61,38 @@ class PiperSynthesisProvider(SynthesisProvider):
 
     def synthesize(self, segments: list[SegmentMetadata]) -> SynthesisResult:
         total_pause_ms = sum(segment.pause_ms for segment in segments)
-        audio_path = self._synthesize_text(self._build_input_text(segments))
+
+        clips: list[Path] = []
+        for segment in segments:
+            if not segment.text.strip():
+                continue
+
+            # Extract emotion string from enum or plain string
+            emotion = getattr(segment, "emotion", "neutral")
+            emotion_str = emotion.value if hasattr(emotion, "value") else str(emotion)
+
+            noise_scale = get_noise_scale(emotion_str)
+
+            logger.info(
+                "Synthesising segment | emotion=%s noise_scale=%.4f text=%r",
+                emotion_str,
+                noise_scale,
+                segment.text[:60],
+            )
+
+            clips.append(
+                self._synthesize_text(
+                    text=segment.text.strip(),
+                    noise_scale=noise_scale,
+                    length_scale=getattr(segment, "length_scale", _DEFAULT_LENGTH_SCALE),
+                    noise_w=getattr(segment, "noise_w", _DEFAULT_NOISE_W),
+                )
+            )
+
+        if not clips:
+            raise RuntimeError("No text available for Piper synthesis")
+
+        audio_path = clips[0] if len(clips) == 1 else self._concat_wavs(clips)
 
         return SynthesisResult(
             audio_url=f"{self.audio_route}/{audio_path.name}",
@@ -67,13 +106,13 @@ class PiperSynthesisProvider(SynthesisProvider):
             return True
         return shutil.which(self.piper_bin) is not None
 
-    def _build_input_text(self, segments: list[SegmentMetadata]) -> str:
-        text = " ".join(segment.text.strip() for segment in segments if segment.text.strip())
-        if not text:
-            raise RuntimeError("No text available for Piper synthesis")
-        return text
-
-    def _synthesize_text(self, text: str) -> Path:
+    def _synthesize_text(
+        self,
+        text: str,
+        noise_scale: float = _DEFAULT_NOISE_SCALE,
+        length_scale: float = _DEFAULT_LENGTH_SCALE,
+        noise_w: float = _DEFAULT_NOISE_W,
+    ) -> Path:
         readiness = self.get_readiness()
         if not readiness["binary_available"]:
             raise RuntimeError(f"Piper binary is not available: {self.piper_bin}")
@@ -88,10 +127,11 @@ class PiperSynthesisProvider(SynthesisProvider):
         subprocess.run(
             [
                 self.piper_bin,
-                "--model",
-                str(self.model_path),
-                "--output_file",
-                str(output_path),
+                "--model", str(self.model_path),
+                "--output_file", str(output_path),
+                "--noise-scale", str(noise_scale),
+                "--length-scale", str(length_scale),
+                "--noise-w", str(noise_w),
             ],
             input=text,
             text=True,
@@ -102,4 +142,20 @@ class PiperSynthesisProvider(SynthesisProvider):
         if not output_path.exists() or output_path.stat().st_size == 0:
             raise RuntimeError("Piper did not produce an output WAV file")
 
+        return output_path
+
+    def _concat_wavs(self, clips: list[Path]) -> Path:
+        output_path = self.output_dir / f"{uuid4().hex}.wav"
+        all_frames = b""
+        params = None
+        for clip in clips:
+            with wave.open(str(clip), "rb") as wf:
+                if params is None:
+                    params = wf.getparams()
+                all_frames += wf.readframes(wf.getnframes())
+        with wave.open(str(output_path), "wb") as out:
+            out.setparams(params)
+            out.writeframes(all_frames)
+        for clip in clips:
+            clip.unlink(missing_ok=True)
         return output_path

@@ -34,7 +34,8 @@ def split_segments(text: str) -> list[str]:
             index = end
             continue
 
-        end = _consume_trailing_cues(text, end)
+        # Include trailing emoji/emoticons IN the segment instead of discarding them
+        end = _include_trailing_cues(text, end)
         segment = text[start:end].strip()
         if segment:
             segments.append(segment)
@@ -65,18 +66,22 @@ def _is_abbreviation_boundary(text: str, index: int, end: int) -> bool:
     token_start = index
     while token_start > 0 and not text[token_start - 1].isspace():
         token_start -= 1
-
     return text[token_start:end].lower() in _ABBREVIATIONS
 
 
-def _consume_trailing_cues(text: str, index: int) -> int:
+def _include_trailing_cues(text: str, index: int) -> int:
+    """Expand segment boundary to include trailing emoji/emoticons."""
     length = len(text)
     cursor = index
 
-    while cursor < length and text[cursor].isspace():
+    while cursor < length:
+        # Skip whitespace
         next_cursor = cursor
         while next_cursor < length and text[next_cursor].isspace():
             next_cursor += 1
+
+        if next_cursor == length:
+            break
 
         cue_end = _consume_emoticon(text, next_cursor)
         if cue_end != next_cursor:
@@ -97,7 +102,6 @@ def _consume_emoticon(text: str, index: int) -> int:
     for emoticon in _EMOTICONS:
         if text.startswith(emoticon, index):
             return index + len(emoticon)
-
     return index
 
 
