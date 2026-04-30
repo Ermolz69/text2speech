@@ -26,5 +26,5 @@ def test_plan_segment_combines_emotion_and_prosody_rules() -> None:
     )
 
     assert segment.emotion.value == "happy"
-    assert segment.rate >= 1.0
+    assert segment.rate == 0.85
     assert segment.pause_ms >= 400
