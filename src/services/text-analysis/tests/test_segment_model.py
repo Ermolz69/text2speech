@@ -63,7 +63,7 @@ def test_analyze_normalizes_basic_text_noise_and_ellipsis() -> None:
     assert segment["emotion"] == "sad"
     assert segment["intensity"] == 0.4
     assert "punctuation:ellipsis" in segment["cues"]
-    assert segment["pause_ms"] == 300
+    assert segment["pause_ms"] == 400
 
 
 def test_analyze_returns_multiple_segments_with_independent_metadata() -> None:

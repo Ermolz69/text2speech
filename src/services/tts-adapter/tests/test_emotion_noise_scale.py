@@ -20,9 +20,7 @@ import pytest
 # Allow importing the modules from the parent directory when running directly.
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from emotion_noise_scale import get_noise_scale, DEFAULT_NOISE_SCALE, EMOTION_NOISE_SCALE
-from prosody_planner import plan_prosody, annotate_segments
-
+from app.emotion_noise_scale import get_noise_scale, DEFAULT_NOISE_SCALE, EMOTION_NOISE_SCALE
 
 # ---------------------------------------------------------------------------
 # get_noise_scale
