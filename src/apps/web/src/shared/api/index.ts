@@ -1,1 +1,7 @@
-export { analyzeText, synthesizeText, getHealth, type HealthResponse } from "./gateway";
+export {
+  analyzeText,
+  getHealth,
+  getTtsVoices,
+  synthesizeText,
+  type HealthResponse,
+} from "./gateway";

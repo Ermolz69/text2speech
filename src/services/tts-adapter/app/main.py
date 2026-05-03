@@ -15,7 +15,13 @@ from fastapi.staticfiles import StaticFiles
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 from sentry_sdk.integrations.starlette import StarletteIntegration
 
-from app.http.contracts import SynthesizeRequestDto, SynthesizeResponseDto, to_internal_segments
+from app.http.contracts import (
+    ListVoicesResponseDto,
+    SynthesizeRequestDto,
+    SynthesizeResponseDto,
+    VoiceInfoDto,
+    to_internal_segments,
+)
 from app.models.segment import SegmentMetadata
 from app.providers import PiperSynthesisProvider, SynthesisProvider
 from app.providers.piper import DEFAULT_AUDIO_ROUTE, resolve_audio_output_dir
@@ -265,7 +271,12 @@ def synthesize(payload: SynthesizeRequestDto, request: Request) -> SynthesizeRes
         raise RuntimeError("Forced test runtime error")
 
     segments: list[SegmentMetadata] = to_internal_segments(payload)
-    result = get_synthesis_provider(request).synthesize(segments)
+    result = get_synthesis_provider(request).synthesize(
+        segments,
+        voice_id=payload.voiceId,
+        length_scale=payload.metadata.lengthScale if payload.metadata else None,
+        noise_scale=payload.metadata.noiseScale if payload.metadata else None,
+    )
     filename = result.audio_url.rsplit("/", 1)[-1] if "/" in result.audio_url else result.audio_url
     log_event(
         request,
@@ -281,3 +292,15 @@ def synthesize(payload: SynthesizeRequestDto, request: Request) -> SynthesizeRes
         audioUrl=result.audio_url,
         metadata=payload.metadata,
     )
+
+
+@app.get("/voices", response_model=ListVoicesResponseDto, response_model_exclude_none=True)
+def voices(request: Request) -> ListVoicesResponseDto:
+    provider = get_synthesis_provider(request)
+    voices = [VoiceInfoDto(id=voice.id, label=voice.label) for voice in provider.list_voices()]
+    log_event(
+        request,
+        event="voices_completed",
+        status=200,
+    )
+    return ListVoicesResponseDto(voices=voices)

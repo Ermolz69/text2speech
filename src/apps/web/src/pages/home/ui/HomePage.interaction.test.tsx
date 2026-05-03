@@ -3,14 +3,16 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { analyzeTextMock, synthesizeTextMock } = vi.hoisted(() => ({
+const { analyzeTextMock, synthesizeTextMock, getTtsVoicesMock } = vi.hoisted(() => ({
   analyzeTextMock: vi.fn(),
   synthesizeTextMock: vi.fn(),
+  getTtsVoicesMock: vi.fn(),
 }));
 
 vi.mock("@shared/api", () => ({
   analyzeText: analyzeTextMock,
   synthesizeText: synthesizeTextMock,
+  getTtsVoices: getTtsVoicesMock,
 }));
 
 import { HomePage } from "./HomePage";
@@ -19,6 +21,10 @@ describe("HomePage interactions", () => {
   beforeEach(() => {
     analyzeTextMock.mockReset();
     synthesizeTextMock.mockReset();
+    getTtsVoicesMock.mockReset();
+    getTtsVoicesMock.mockResolvedValue({
+      voices: [{ id: "en_US-lessac-medium", label: "en_US-lessac-medium" }],
+    });
     vi.restoreAllMocks();
   });
 
@@ -32,7 +38,7 @@ describe("HomePage interactions", () => {
     fireEvent.change(screen.getByPlaceholderText("Paste text to synthesize"), {
       target: { value: "   " },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Run synthesis" }));
+    fireEvent.submit(screen.getByRole("button", { name: "Run synthesis" }).closest("form")!);
 
     expect(await screen.findByText("Enter text to synthesize.")).toBeTruthy();
     expect(analyzeTextMock).not.toHaveBeenCalled();
@@ -41,6 +47,13 @@ describe("HomePage interactions", () => {
   });
 
   it("submits successfully and renders synthesis results", async () => {
+    getTtsVoicesMock.mockResolvedValue({
+      voices: [
+        { id: "voice-1", label: "Voice 1" },
+        { id: "voice-2", label: "Voice 2" },
+      ],
+    });
+
     analyzeTextMock.mockResolvedValue({
       segments: [
         {
@@ -59,6 +72,8 @@ describe("HomePage interactions", () => {
 
     render(<HomePage />);
 
+    await waitFor(() => expect(screen.getByDisplayValue("Voice 1")).toBeTruthy());
+
     fireEvent.change(screen.getByPlaceholderText("Paste text to synthesize"), {
       target: { value: "Hello! :)" },
     });
@@ -66,7 +81,7 @@ describe("HomePage interactions", () => {
     fireEvent.change(screen.getByDisplayValue("Voice 1"), { target: { value: "voice-2" } });
     fireEvent.change(screen.getByDisplayValue("mp3"), { target: { value: "wav" } });
     fireEvent.click(screen.getByRole("button", { name: "Hide diagnostics" }));
-    fireEvent.click(screen.getByRole("button", { name: "Run synthesis" }));
+    fireEvent.submit(screen.getByRole("button", { name: "Run synthesis" }).closest("form")!);
 
     await waitFor(() => {
       expect(analyzeTextMock).toHaveBeenCalledWith({ text: "Hello! :)" });
@@ -77,6 +92,8 @@ describe("HomePage interactions", () => {
       voiceId: "voice-2",
       metadata: {
         format: "wav",
+        lengthScale: 1,
+        noiseScale: 0.667,
         emotion: "neutral",
         intensity: 0,
       },
@@ -110,17 +127,64 @@ describe("HomePage interactions", () => {
 
     render(<HomePage />);
 
+    await waitFor(() => expect(screen.getByDisplayValue("en_US-lessac-medium")).toBeTruthy());
+
     fireEvent.change(screen.getByPlaceholderText("Paste text to synthesize"), {
       target: { value: "Hello again!" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Run synthesis" }));
+    fireEvent.submit(screen.getByRole("button", { name: "Run synthesis" }).closest("form")!);
 
     await waitFor(() => {
       expect(synthesizeTextMock).toHaveBeenCalledWith({
         text: "Hello again!",
-        voiceId: "voice-1",
+        voiceId: "en_US-lessac-medium",
         metadata: {
           format: "mp3",
+          lengthScale: 1,
+          noiseScale: 0.667,
+        },
+      });
+    });
+  });
+
+  it("sends manual speed/noise and preset intensity boost", async () => {
+    analyzeTextMock.mockResolvedValue({
+      segments: [
+        {
+          text: "Boost it",
+          emotion: "joy",
+          intensity: 1,
+          pauseAfterMs: 80,
+          emoji: [],
+          punctuation: ["!"],
+        },
+      ],
+    });
+    synthesizeTextMock.mockResolvedValue({
+      audioUrl: "/audio/boost.wav",
+    });
+
+    render(<HomePage />);
+
+    await waitFor(() => expect(screen.getByDisplayValue("en_US-lessac-medium")).toBeTruthy());
+
+    fireEvent.change(screen.getByLabelText("Text"), {
+      target: { value: "Boost it" },
+    });
+    fireEvent.change(screen.getByLabelText("length_scale"), { target: { value: "1.4" } });
+    fireEvent.change(screen.getByLabelText("noise_scale"), { target: { value: "1.1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Strong" }));
+    fireEvent.submit(screen.getByRole("button", { name: "Run synthesis" }).closest("form")!);
+
+    await waitFor(() => {
+      expect(synthesizeTextMock).toHaveBeenCalledWith({
+        text: "Boost it",
+        voiceId: "en_US-lessac-medium",
+        metadata: {
+          format: "mp3",
+          lengthScale: 1.4,
+          noiseScale: 1.1,
+          intensityBoost: 3,
         },
       });
     });
@@ -143,12 +207,17 @@ describe("HomePage interactions", () => {
 
     render(<HomePage />);
 
+    await waitFor(() => expect(screen.getByDisplayValue("en_US-lessac-medium")).toBeTruthy());
+
     fireEvent.change(screen.getByPlaceholderText("Paste text to synthesize"), {
       target: { value: "Hello" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Run synthesis" }));
+    fireEvent.submit(screen.getByRole("button", { name: "Run synthesis" }).closest("form")!);
 
-    expect(await screen.findByText("Gateway request failed with status 502")).toBeTruthy();
+    await waitFor(() => expect(analyzeTextMock).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(screen.getByText(/Gateway request failed with status 502/)).toBeTruthy()
+    );
     expect(screen.getByText("error")).toBeTruthy();
   });
 
@@ -157,12 +226,17 @@ describe("HomePage interactions", () => {
 
     render(<HomePage />);
 
+    await waitFor(() => expect(screen.getByDisplayValue("en_US-lessac-medium")).toBeTruthy());
+
     fireEvent.change(screen.getByPlaceholderText("Paste text to synthesize"), {
       target: { value: "Hello" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Run synthesis" }));
+    fireEvent.submit(screen.getByRole("button", { name: "Run synthesis" }).closest("form")!);
 
-    expect(await screen.findByText("Synthesis failed. Please try again.")).toBeTruthy();
+    await waitFor(() => expect(analyzeTextMock).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(screen.getByText(/Synthesis failed\. Please try again\./)).toBeTruthy()
+    );
     expect(screen.getByText("error")).toBeTruthy();
   });
 });

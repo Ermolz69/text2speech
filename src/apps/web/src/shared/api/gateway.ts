@@ -1,6 +1,7 @@
 import type {
   AnalyzeRequestDto,
   AnalyzeResponseDto,
+  ListVoicesResponseDto,
   SynthesizeRequestDto,
   SynthesizeResponseDto,
 } from "shared";
@@ -68,4 +69,14 @@ export async function synthesizeText(
 export async function getHealth(): Promise<HealthResponse> {
   const response = await fetch("/health", { method: "GET" });
   return parseJsonResponse<HealthResponse>(response);
+}
+
+export async function getTtsVoices(): Promise<ListVoicesResponseDto> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/tts/voices`, { method: "GET" });
+    return parseJsonResponse<ListVoicesResponseDto>(response);
+  } catch (error) {
+    if (error instanceof TypeError) wrapNetworkError(error, "voice catalog service");
+    throw error;
+  }
 }

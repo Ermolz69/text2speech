@@ -22,6 +22,7 @@ function createTextAnalysisClientMock(
 function createTtsAdapterClientMock(overrides: Partial<TtsAdapterClient> = {}): TtsAdapterClient {
   return {
     synthesize: vi.fn(),
+    fetchVoices: vi.fn(),
     fetchAudio: vi.fn(),
     ...overrides,
   };
@@ -599,7 +600,7 @@ describe("gateway tts route", () => {
           format: "wav",
           emotion: "anger",
           intensity: 3,
-          segments: analyzeResponse.segments,
+          segments: [{ text: "Analyzed", emotion: "anger", intensity: 3, pauseAfterMs: 100 }],
         },
       },
       { requestId: expect.any(String) }
@@ -610,6 +611,52 @@ describe("gateway tts route", () => {
         segments: analyzeResponse.segments,
       },
     });
+  });
+
+  it("applies intensityBoost to analyzed segments before forwarding to adapter", async () => {
+    const analyzeResponse: AnalyzeResponseDto = {
+      segments: [{ text: "Analyzed", emotion: "joy", intensity: 1, pauseAfterMs: 100 }],
+    };
+
+    const textAnalysisClient = createTextAnalysisClientMock({
+      analyze: vi.fn().mockResolvedValue(analyzeResponse),
+    });
+
+    const ttsAdapterClient = createTtsAdapterClientMock({
+      synthesize: vi.fn().mockResolvedValue({
+        audioUrl: "/audio/voice.wav",
+        metadata: {
+          segments: [{ text: "Analyzed", emotion: "joy", intensity: 3, pauseAfterMs: 100 }],
+        },
+      }),
+    });
+
+    app = createApp({ textAnalysisClient, ttsAdapterClient });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/tts",
+      payload: {
+        text: "Original",
+        voiceId: "voice-1",
+        metadata: {
+          intensityBoost: 2,
+        },
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(ttsAdapterClient.synthesize).toHaveBeenCalledWith(
+      {
+        text: "Original",
+        voiceId: "voice-1",
+        metadata: {
+          intensityBoost: 2,
+          segments: [{ text: "Analyzed", emotion: "joy", intensity: 3, pauseAfterMs: 100 }],
+        },
+      },
+      { requestId: expect.any(String) }
+    );
   });
 
   it("returns a shared validation error when voiceId is missing", async () => {
@@ -786,6 +833,55 @@ describe("gateway tts route", () => {
             code: "enum",
           },
         ],
+      },
+    });
+  });
+
+  it("returns voices from the adapter", async () => {
+    const ttsAdapterClient = createTtsAdapterClientMock({
+      fetchVoices: vi.fn().mockResolvedValue({
+        voices: [{ id: "en_US-lessac-medium", label: "en_US-lessac-medium" }],
+      }),
+    });
+
+    app = createApp({ ttsAdapterClient });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/tts/voices",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(ttsAdapterClient.fetchVoices).toHaveBeenCalledWith({ requestId: expect.any(String) });
+    expect(response.json()).toEqual({
+      voices: [{ id: "en_US-lessac-medium", label: "en_US-lessac-medium" }],
+    });
+  });
+
+  it("maps upstream voices failures to shared error envelope", async () => {
+    const ttsAdapterClient = createTtsAdapterClientMock({
+      fetchVoices: vi
+        .fn()
+        .mockRejectedValue(
+          new TtsAdapterClientError("upstream", "response_status", "failed", { statusCode: 503 })
+        ),
+    });
+
+    app = createApp({ ttsAdapterClient });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/tts/voices",
+    });
+
+    expect(response.statusCode).toBe(502);
+    expectTopLevelErrorEnvelope(response.json());
+    expect(response.json()).toEqual({
+      error: {
+        code: "upstream_error",
+        message: "TTS adapter service request failed",
+        status: 502,
+        path: "/api/tts/voices",
       },
     });
   });

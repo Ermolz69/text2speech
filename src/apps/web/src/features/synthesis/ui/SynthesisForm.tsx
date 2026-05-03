@@ -1,4 +1,4 @@
-import type { FormEvent } from "react";
+import { useId, type FormEvent } from "react";
 
 import type {
   FormState,
@@ -24,6 +24,9 @@ interface SynthesisFormProps {
   onVoiceChange: (voiceId: string) => void;
   onModeChange: (mode: SynthesisMode) => void;
   onFormatChange: (format: FormState["outputFormat"]) => void;
+  onLengthScaleChange: (lengthScale: number) => void;
+  onNoiseScaleChange: (noiseScale: number) => void;
+  onIntensityBoostChange: (intensityBoost: FormState["intensityBoost"]) => void;
 }
 
 const stageLabel: Record<NonNullable<LoadingStage>, string> = {
@@ -42,29 +45,72 @@ export function SynthesisForm({
   onVoiceChange,
   onModeChange,
   onFormatChange,
+  onLengthScaleChange,
+  onNoiseScaleChange,
+  onIntensityBoostChange,
 }: SynthesisFormProps) {
   const isLoading = requestState === "loading";
+  const textId = useId();
+  const voiceId = useId();
+  const modeId = useId();
+  const formatId = useId();
+  const loadingStatusId = useId();
+  const errorMessageId = useId();
+  const textHintId = useId();
+  const lengthScaleId = useId();
+  const noiseScaleId = useId();
+  const loadingAnnouncement = isLoading
+    ? loadingStage
+      ? stageLabel[loadingStage]
+      : "Generating…"
+    : "Idle";
 
   return (
-    <form className={uiClass.card} onSubmit={onSubmit} aria-busy={isLoading}>
+    <form
+      className={uiClass.card}
+      onSubmit={onSubmit}
+      aria-busy={isLoading}
+      aria-describedby={`${loadingStatusId}${errorMessage ? ` ${errorMessageId}` : ""}`}
+    >
       <h2 className="mb-4 text-xl font-semibold text-stone-800">Synthesis</h2>
 
-      <label className="mb-4 block">
-        <span className="mb-2 block text-sm text-stone-600">Text</span>
+      <p
+        id={loadingStatusId}
+        className="sr-only"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        {`Synthesis status: ${loadingAnnouncement}`}
+      </p>
+
+      <div className="mb-4 block">
+        <label htmlFor={textId} className="mb-2 block text-sm text-stone-600">
+          Text
+        </label>
+        <p id={textHintId} className="mb-2 text-xs text-stone-500">
+          Enter the sentence you want to convert to speech.
+        </p>
         <textarea
+          id={textId}
           className={`min-h-36 resize-y transition-opacity ${uiClass.input} ${isLoading ? "cursor-not-allowed opacity-50" : ""}`}
           value={formState.text}
           onChange={(event) => onTextChange(event.target.value)}
           placeholder="Paste text to synthesize"
           disabled={isLoading}
           aria-disabled={isLoading}
+          aria-describedby={textHintId}
+          required
         />
-      </label>
+      </div>
 
       <div className="mb-4 grid gap-3 md:grid-cols-3">
-        <label className="block">
-          <span className="mb-2 block text-sm text-stone-600">Voice</span>
+        <div className="block">
+          <label htmlFor={voiceId} className="mb-2 block text-sm text-stone-600">
+            Voice
+          </label>
           <select
+            id={voiceId}
             className={uiClass.input}
             value={formState.voiceId}
             onChange={(event) => onVoiceChange(event.target.value)}
@@ -76,11 +122,14 @@ export function SynthesisForm({
               </option>
             ))}
           </select>
-        </label>
+        </div>
 
-        <label className="block">
-          <span className="mb-2 block text-sm text-stone-600">Mode</span>
+        <div className="block">
+          <label htmlFor={modeId} className="mb-2 block text-sm text-stone-600">
+            Mode
+          </label>
           <select
+            id={modeId}
             className={uiClass.input}
             value={formState.mode}
             onChange={(event) => onModeChange(event.target.value as SynthesisMode)}
@@ -89,11 +138,14 @@ export function SynthesisForm({
             <option value="neutral">neutral</option>
             <option value="expressive">expressive</option>
           </select>
-        </label>
+        </div>
 
-        <label className="block">
-          <span className="mb-2 block text-sm text-stone-600">Format</span>
+        <div className="block">
+          <label htmlFor={formatId} className="mb-2 block text-sm text-stone-600">
+            Format
+          </label>
           <select
+            id={formatId}
             className={uiClass.input}
             value={formState.outputFormat}
             onChange={(event) => onFormatChange(event.target.value as FormState["outputFormat"])}
@@ -102,7 +154,69 @@ export function SynthesisForm({
             <option value="mp3">mp3</option>
             <option value="wav">wav</option>
           </select>
-        </label>
+        </div>
+
+        <div className="block">
+          <label htmlFor={lengthScaleId} className="mb-2 block text-sm text-stone-600">
+            length_scale ({formState.lengthScale.toFixed(2)})
+          </label>
+          <input
+            id={lengthScaleId}
+            type="range"
+            min={0.5}
+            max={2}
+            step={0.05}
+            className="w-full accent-emerald-700"
+            value={formState.lengthScale}
+            onChange={(event) => onLengthScaleChange(Number(event.target.value))}
+            disabled={isLoading}
+            aria-label="length_scale"
+          />
+        </div>
+
+        <div className="block">
+          <label htmlFor={noiseScaleId} className="mb-2 block text-sm text-stone-600">
+            noise_scale ({formState.noiseScale.toFixed(2)})
+          </label>
+          <input
+            id={noiseScaleId}
+            type="range"
+            min={0}
+            max={1.5}
+            step={0.05}
+            className="w-full accent-emerald-700"
+            value={formState.noiseScale}
+            onChange={(event) => onNoiseScaleChange(Number(event.target.value))}
+            disabled={isLoading}
+            aria-label="noise_scale"
+          />
+        </div>
+      </div>
+
+      <div className="mb-4">
+        <p className="mb-2 text-sm text-stone-600">Preset emotion boost</p>
+        <div className="flex flex-wrap gap-2">
+          {[0, 1, 2, 3].map((preset) => {
+            const isActive = formState.intensityBoost === preset;
+            const labelByPreset = ["Off", "Light", "Medium", "Strong"] as const;
+            return (
+              <button
+                key={preset}
+                type="button"
+                className={`rounded-lg border px-3 py-1.5 text-sm transition ${
+                  isActive
+                    ? "border-emerald-700 bg-emerald-700 text-white"
+                    : "border-stone-300 bg-white text-stone-700 hover:border-emerald-400"
+                }`}
+                onClick={() => onIntensityBoostChange(preset as FormState["intensityBoost"])}
+                disabled={isLoading || formState.mode === "neutral"}
+                aria-pressed={isActive}
+              >
+                {labelByPreset[preset]}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       <button
@@ -110,11 +224,12 @@ export function SynthesisForm({
         className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-2 font-medium text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
         disabled={isLoading}
         aria-busy={isLoading}
+        aria-describedby={loadingStatusId}
       >
         {isLoading ? (
           <>
             <Spinner />
-            {loadingStage ? stageLabel[loadingStage] : "Generating…"}
+            {loadingAnnouncement}
           </>
         ) : (
           "Run synthesis"
@@ -141,6 +256,7 @@ export function SynthesisForm({
       {/* Error message */}
       {errorMessage ? (
         <p
+          id={errorMessageId}
           role="alert"
           aria-live="assertive"
           className="mt-3 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"

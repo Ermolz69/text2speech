@@ -34,6 +34,9 @@ export interface SynthesisMetadataDto {
   segments?: AnalyzeSegmentDto[];
   emotion?: EmotionLabel;
   intensity?: EmotionIntensity;
+  intensityBoost?: EmotionIntensity;
+  lengthScale?: number;
+  noiseScale?: number;
   format?: "wav" | "mp3" | "ogg";
 }
 
@@ -47,4 +50,13 @@ export interface SynthesizeResponseDto {
   audioUrl: string;
   metadata?: SynthesisMetadataDto;
   metricsUrl?: string;
+}
+
+export interface VoiceInfoDto {
+  id: string;
+  label: string;
+}
+
+export interface ListVoicesResponseDto {
+  voices: VoiceInfoDto[];
 }

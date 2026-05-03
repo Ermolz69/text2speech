@@ -8,7 +8,9 @@ export type {
   AnalyzeSegmentDto,
   EmotionIntensity,
   EmotionLabel,
+  ListVoicesResponseDto,
   SynthesisMetadataDto,
   SynthesizeRequestDto,
   SynthesizeResponseDto,
+  VoiceInfoDto,
 } from "./dto";

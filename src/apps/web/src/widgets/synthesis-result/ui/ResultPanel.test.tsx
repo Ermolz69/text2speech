@@ -20,6 +20,7 @@ describe("ResultPanel", () => {
     expect(html).toContain(">0<");
     expect(html).toContain("mp3");
     expect(html).toContain("Audio will appear here after a successful request.");
+    expect(html).toContain("No synthesised audio is available yet.");
     expect(html).not.toContain("Download audio");
   });
 
@@ -40,6 +41,9 @@ describe("ResultPanel", () => {
     expect(html).toContain("wav");
     expect(html).toContain("842 ms");
     expect(html).toContain("/api/audio/sample.wav");
+    expect(html).toContain("Audio player controls");
+    expect(html).toContain("Play audio");
+    expect(html).toContain("Restart audio");
     expect(html).toContain("Download audio");
     expect(html).toContain("audio");
   });
