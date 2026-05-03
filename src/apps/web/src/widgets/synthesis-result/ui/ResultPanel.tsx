@@ -1,3 +1,5 @@
+import { useEffect, useRef, useState } from "react";
+
 import type { SummaryState } from "@features/synthesis";
 import { uiClass } from "@shared/ui/styles";
 
@@ -16,12 +18,55 @@ export function ResultPanel({
   generationMs,
   audioUrl,
 }: ResultPanelProps) {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [audioStatusMessage, setAudioStatusMessage] = useState(
+    "No synthesised audio is available yet."
+  );
+
+  useEffect(() => {
+    setIsPlaying(false);
+    setAudioStatusMessage(
+      audioUrl
+        ? "Synthesised audio is ready. Use Play audio to start playback."
+        : "No synthesised audio is available yet."
+    );
+  }, [audioUrl]);
+
+  function handleTogglePlayback() {
+    const audioElement = audioRef.current;
+    if (!audioElement) {
+      return;
+    }
+
+    if (audioElement.paused) {
+      void audioElement.play();
+      return;
+    }
+
+    audioElement.pause();
+  }
+
+  function handleRestart() {
+    const audioElement = audioRef.current;
+    if (!audioElement) {
+      return;
+    }
+
+    audioElement.currentTime = 0;
+    void audioElement.play();
+  }
+
   return (
     <section className={uiClass.card} aria-live="polite" aria-label="Synthesis result">
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-xl font-semibold text-stone-800">Result</h2>
         <StatusBadge requestState={requestState} />
       </div>
+
+      <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+        {audioStatusMessage}
+      </p>
 
       {requestState === "loading" && <LoadingSkeleton />}
 
@@ -40,13 +85,37 @@ export function ResultPanel({
           </div>
 
           {audioUrl ? (
-            <div className="space-y-3">
+            <div className="space-y-3" role="group" aria-label="Audio player controls">
               <audio
+                ref={audioRef}
                 controls
                 src={audioUrl}
                 className="w-full"
                 aria-label="Synthesised audio output"
+                onPlay={() => setIsPlaying(true)}
+                onPause={() => setIsPlaying(false)}
+                onEnded={() => setIsPlaying(false)}
               />
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className={uiClass.secondaryButton}
+                  onClick={handleTogglePlayback}
+                  disabled={!audioUrl}
+                  aria-label={isPlaying ? "Pause audio playback" : "Play audio playback"}
+                >
+                  {isPlaying ? "Pause audio" : "Play audio"}
+                </button>
+                <button
+                  type="button"
+                  className={uiClass.secondaryButton}
+                  onClick={handleRestart}
+                  disabled={!audioUrl}
+                  aria-label="Restart audio playback"
+                >
+                  Restart audio
+                </button>
+              </div>
               <a className={`inline-flex ${uiClass.secondaryButton}`} href={audioUrl} download>
                 Download audio
               </a>

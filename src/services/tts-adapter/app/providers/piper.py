@@ -9,10 +9,11 @@ import tempfile
 import wave
 from dataclasses import dataclass
 from pathlib import Path
+from random import Random
 from uuid import uuid4
 
 from app.models.segment import SegmentMetadata
-from app.providers.base import SynthesisProvider, SynthesisResult
+from app.providers.base import SynthesisProvider, SynthesisResult, VoiceInfo
 
 DEFAULT_AUDIO_ROUTE = "/audio"
 DEFAULT_AUDIO_OUTPUT_DIR = Path(__file__).resolve().parents[2] / "generated-audio"
@@ -31,6 +32,16 @@ POSITIVE_UNICODE_EMOJIS = (
 NON_SPOKEN_MARKERS = tuple(sorted((*POSITIVE_EMOTICONS, *POSITIVE_UNICODE_EMOJIS), key=len, reverse=True))
 COLLAPSE_WHITESPACE_RE = re.compile(r"\s+")
 SPACE_BEFORE_PUNCT_RE = re.compile(r"\s+([,!?;.])")
+ASTERISK_MARKED_WORD_RE = re.compile(r"\*([\w'-]+)\*")
+UNDERSCORE_MARKED_WORD_RE = re.compile(r"_([\w'-]+)_")
+
+EMPHASIS_LENGTH_SCALE_MULTIPLIER = 1.12
+EMPHASIS_VOLUME_GAIN = 1.15
+HESITATION_LENGTH_SCALE_MULTIPLIER = 1.18
+HESITATION_VOLUME_GAIN = 0.82
+HESITATION_PITCH_SHIFT = -0.3
+MICRO_FADE_MS = 8
+ROOM_TONE_VOLUME = 0.006
 
 
 @dataclass(frozen=True)
@@ -42,6 +53,8 @@ class PreparedSegmentSynthesis:
     rate: float
     pitch_hint: float
     length_scale: float
+    hesitation_markers: tuple[str, ...]
+    stressed_words: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -75,6 +88,9 @@ class PiperSynthesisProvider(SynthesisProvider):
         self.output_dir = resolve_audio_output_dir(output_dir)
         self.audio_route = audio_route.rstrip("/") or DEFAULT_AUDIO_ROUTE
 
+    def list_voices(self) -> list[VoiceInfo]:
+        return [VoiceInfo(id=voice_id, label=voice_id) for voice_id in self._voice_catalog().keys()]
+
     def get_readiness(self) -> dict[str, object]:
         binary_available = self._binary_available(self.piper_bin)
         ffmpeg_available = self._binary_available(self.ffmpeg_bin)
@@ -92,9 +108,24 @@ class PiperSynthesisProvider(SynthesisProvider):
             "ready": binary_available and ffmpeg_available and model_exists,
         }
 
-    def synthesize(self, segments: list[SegmentMetadata]) -> SynthesisResult:
+    def synthesize(
+        self,
+        segments: list[SegmentMetadata],
+        *,
+        voice_id: str,
+        length_scale: float | None = None,
+        noise_scale: float | None = None,
+    ) -> SynthesisResult:
         plan = self._prepare_synthesis_plan(segments)
-        audio_path = self._synthesize_segments(plan)
+        model_path = self._resolve_model_for_voice(voice_id)
+        length_scale_multiplier = self._clamp(length_scale if length_scale is not None else 1.0, 0.5, 2.0)
+        resolved_noise_scale = self._clamp(noise_scale if noise_scale is not None else 0.667, 0.0, 2.0)
+        audio_path = self._synthesize_segments(
+            plan,
+            model_path=model_path,
+            length_scale_multiplier=length_scale_multiplier,
+            noise_scale=resolved_noise_scale,
+        )
 
         return SynthesisResult(
             audio_url=f"{self.audio_route}/{audio_path.name}",
@@ -107,6 +138,35 @@ class PiperSynthesisProvider(SynthesisProvider):
         if binary_path.is_file():
             return True
         return shutil.which(binary) is not None
+
+    def _voice_catalog(self) -> dict[str, Path]:
+        if self.model_path is None:
+            return {}
+
+        catalog: dict[str, Path] = {}
+        model_dir = self.model_path.parent
+        if model_dir.exists():
+            for model_path in sorted(model_dir.glob("*.onnx")):
+                catalog[model_path.stem] = model_path
+
+        if self.model_path.exists():
+            catalog.setdefault(self.model_path.stem, self.model_path)
+
+        return catalog
+
+    def _resolve_model_for_voice(self, voice_id: str) -> Path:
+        catalog = self._voice_catalog()
+        if voice_id in catalog:
+            return catalog[voice_id]
+
+        # Backward compatibility for legacy client IDs.
+        if self.model_path is not None and self.model_path.exists():
+            return self.model_path
+
+        raise RuntimeError(f"Voice model is not available: {voice_id}")
+
+    def _clamp(self, value: float, minimum: float, maximum: float) -> float:
+        return max(minimum, min(maximum, value))
 
     def _prepare_synthesis_plan(self, segments: list[SegmentMetadata]) -> PreparedSynthesisPlan:
         prepared_segments: list[PreparedSegmentSynthesis] = []
@@ -125,6 +185,8 @@ class PiperSynthesisProvider(SynthesisProvider):
                     rate=segment.rate,
                     pitch_hint=segment.pitch_hint,
                     length_scale=self._to_length_scale(segment.rate),
+                    hesitation_markers=tuple(segment.hesitation_markers),
+                    stressed_words=tuple(segment.stressed_words),
                 )
             )
 
@@ -136,7 +198,14 @@ class PiperSynthesisProvider(SynthesisProvider):
             total_pause_ms=sum(segment.pause_ms for segment in prepared_segments),
         )
 
-    def _synthesize_segments(self, plan: PreparedSynthesisPlan) -> Path:
+    def _synthesize_segments(
+        self,
+        plan: PreparedSynthesisPlan,
+        *,
+        model_path: Path,
+        length_scale_multiplier: float,
+        noise_scale: float,
+    ) -> Path:
         self._assert_ready()
         self.output_dir.mkdir(parents=True, exist_ok=True)
         output_path = self.output_dir / f"{uuid4().hex}.wav"
@@ -146,17 +215,19 @@ class PiperSynthesisProvider(SynthesisProvider):
             concat_inputs: list[Path] = []
 
             for prepared in plan.segments:
-                raw_segment_path = temp_dir / f"segment-{prepared.index}.wav"
-                processed_segment_path = temp_dir / f"segment-{prepared.index}-processed.wav"
-
-                self._run_piper(prepared, raw_segment_path)
-                self._apply_pitch_hint(raw_segment_path, processed_segment_path, prepared.pitch_hint)
+                processed_segment_path = self._synthesize_prepared_segment(
+                    prepared,
+                    temp_dir,
+                    model_path=model_path,
+                    length_scale_multiplier=length_scale_multiplier,
+                    noise_scale=noise_scale,
+                )
                 concat_inputs.append(processed_segment_path)
 
                 if prepared.pause_ms > 0:
                     pause_path = temp_dir / f"pause-{prepared.index}.wav"
                     sample_rate, channels, sample_width = self._read_wav_format(processed_segment_path)
-                    self._create_silence_wav(
+                    self._create_comfort_noise_wav(
                         pause_path,
                         duration_ms=prepared.pause_ms,
                         sample_rate=sample_rate,
@@ -185,6 +256,9 @@ class PiperSynthesisProvider(SynthesisProvider):
 
     def _sanitize_spoken_text(self, text: str) -> str:
         cleaned = text
+        cleaned = ASTERISK_MARKED_WORD_RE.sub(r"\1", cleaned)
+        cleaned = UNDERSCORE_MARKED_WORD_RE.sub(r"\1", cleaned)
+        cleaned = cleaned.replace("...", " ")
         for marker in NON_SPOKEN_MARKERS:
             cleaned = cleaned.replace(marker, " ")
         cleaned = COLLAPSE_WHITESPACE_RE.sub(" ", cleaned)
@@ -194,20 +268,163 @@ class PiperSynthesisProvider(SynthesisProvider):
     def _to_length_scale(self, rate: float) -> float:
         return max(0.5, min(2.0, 1.0 / rate))
 
-    def _run_piper(self, prepared: PreparedSegmentSynthesis, output_path: Path) -> None:
+    def _synthesize_prepared_segment(
+        self,
+        prepared: PreparedSegmentSynthesis,
+        temp_dir: Path,
+        *,
+        model_path: Path,
+        length_scale_multiplier: float,
+        noise_scale: float,
+    ) -> Path:
+        processed_segment_path = temp_dir / f"segment-{prepared.index}-processed.wav"
+
+        if not prepared.stressed_words and not prepared.hesitation_markers:
+            raw_segment_path = temp_dir / f"segment-{prepared.index}.wav"
+            self._run_piper(
+                prepared.spoken_text,
+                raw_segment_path,
+                model_path=model_path,
+                length_scale=prepared.length_scale,
+                length_scale_multiplier=length_scale_multiplier,
+                noise_scale=noise_scale,
+            )
+            self._apply_audio_effects(
+                raw_segment_path,
+                processed_segment_path,
+                pitch_hint=prepared.pitch_hint,
+                volume_gain=1.0,
+            )
+            return processed_segment_path
+
+        word_inputs = prepared.spoken_text.split()
+        stressed_words = {self._normalize_word_key(word) for word in prepared.stressed_words}
+        hesitation_markers = list(prepared.hesitation_markers)
+        chunk_paths: list[Path] = []
+
+        for chunk_index, word in enumerate(word_inputs):
+            chunk_paths.append(
+                self._render_chunk(
+                    prepared=prepared,
+                    temp_dir=temp_dir,
+                    chunk_index=chunk_index,
+                    token=word,
+                    is_stressed=self._normalize_word_key(word) in stressed_words,
+                    is_hesitation=False,
+                    model_path=model_path,
+                    length_scale_multiplier=length_scale_multiplier,
+                    noise_scale=noise_scale,
+                )
+            )
+
+        for hesitation_index, marker in enumerate(hesitation_markers, start=len(word_inputs)):
+            chunk_paths.append(
+                self._render_chunk(
+                    prepared=prepared,
+                    temp_dir=temp_dir,
+                    chunk_index=hesitation_index,
+                    token=marker,
+                    is_stressed=False,
+                    is_hesitation=True,
+                    model_path=model_path,
+                    length_scale_multiplier=length_scale_multiplier,
+                    noise_scale=noise_scale,
+                )
+            )
+
+        self._concat_audio_files(chunk_paths, processed_segment_path, temp_dir)
+        return processed_segment_path
+
+    def _render_chunk(
+        self,
+        *,
+        prepared: PreparedSegmentSynthesis,
+        temp_dir: Path,
+        chunk_index: int,
+        token: str,
+        is_stressed: bool,
+        is_hesitation: bool,
+        model_path: Path,
+        length_scale_multiplier: float,
+        noise_scale: float,
+    ) -> Path:
+        raw_word_path = temp_dir / f"segment-{prepared.index}-chunk-{chunk_index}.wav"
+        processed_word_path = temp_dir / f"segment-{prepared.index}-chunk-{chunk_index}-processed.wav"
+
+        length_scale = prepared.length_scale
+        pitch_hint = prepared.pitch_hint
+        volume_gain = 1.0
+
+        if is_stressed:
+            length_scale = min(2.0, prepared.length_scale * EMPHASIS_LENGTH_SCALE_MULTIPLIER)
+            volume_gain = EMPHASIS_VOLUME_GAIN
+
+        if is_hesitation:
+            length_scale = min(2.0, prepared.length_scale * HESITATION_LENGTH_SCALE_MULTIPLIER)
+            volume_gain = HESITATION_VOLUME_GAIN
+            pitch_hint = prepared.pitch_hint + HESITATION_PITCH_SHIFT
+
+        jitter = self._chunk_jitter(prepared.index, chunk_index, token)
+        if is_hesitation:
+            length_scale = max(0.5, min(2.0, length_scale + jitter[0]))
+            volume_gain = max(0.2, min(1.0, volume_gain + jitter[1]))
+            pitch_hint = max(-12.0, min(12.0, pitch_hint + jitter[2]))
+
+        self._run_piper(
+            token,
+            raw_word_path,
+            model_path=model_path,
+            length_scale=length_scale,
+            length_scale_multiplier=length_scale_multiplier,
+            noise_scale=noise_scale,
+        )
+        self._apply_audio_effects(
+            raw_word_path,
+            processed_word_path,
+            pitch_hint=pitch_hint,
+            volume_gain=volume_gain,
+        )
+        return processed_word_path
+
+    def _chunk_jitter(self, segment_index: int, chunk_index: int, token: str) -> tuple[float, float, float]:
+        seed = f"{segment_index}:{chunk_index}:{token.lower()}"
+        randomizer = Random(seed)
+        return (
+            randomizer.uniform(-0.03, 0.03),
+            randomizer.uniform(-0.05, 0.02),
+            randomizer.uniform(-0.4, 0.4),
+        )
+
+    def _normalize_word_key(self, word: str) -> str:
+        return word.strip(" \t\n\r.,!?;:'\"()[]{}").lower()
+
+    def _run_piper(
+        self,
+        spoken_text: str,
+        output_path: Path,
+        *,
+        model_path: Path,
+        length_scale: float,
+        length_scale_multiplier: float,
+        noise_scale: float,
+    ) -> None:
+        effective_length_scale = self._clamp(length_scale * length_scale_multiplier, 0.25, 4.0)
+
         subprocess.run(
             [
                 self.piper_bin,
                 "--model",
-                str(self.model_path),
+                str(model_path),
                 "--output_file",
                 str(output_path),
                 "--length-scale",
-                f"{prepared.length_scale:.3f}",
+                f"{effective_length_scale:.3f}",
+                "--noise-scale",
+                f"{noise_scale:.3f}",
                 "--sentence-silence",
                 "0",
             ],
-            input=prepared.spoken_text,
+            input=spoken_text,
             text=True,
             capture_output=True,
             check=True,
@@ -216,15 +433,28 @@ class PiperSynthesisProvider(SynthesisProvider):
         if not output_path.exists() or output_path.stat().st_size == 0:
             raise RuntimeError("Piper did not produce a per-segment WAV file")
 
-    def _apply_pitch_hint(self, input_path: Path, output_path: Path, pitch_hint: float) -> None:
+    def _apply_audio_effects(
+        self,
+        input_path: Path,
+        output_path: Path,
+        *,
+        pitch_hint: float,
+        volume_gain: float,
+    ) -> None:
         sample_rate, _, _ = self._read_wav_format(input_path)
+        fade_seconds = self._fade_seconds(input_path)
         pitch_factor = math.pow(2.0, pitch_hint / 12.0)
         tempo_compensation = 1.0 / pitch_factor
-        audio_filter = (
-            f"asetrate={sample_rate}*{pitch_factor:.6f},"
-            f"aresample={sample_rate},"
-            f"atempo={tempo_compensation:.6f}"
-        )
+        filters = [
+            f"asetrate={sample_rate}*{pitch_factor:.6f}",
+            f"aresample={sample_rate}",
+            f"atempo={tempo_compensation:.6f}",
+            f"afade=t=in:st=0:d={fade_seconds:.3f}",
+            f"afade=t=out:st={max(self._audio_duration_seconds(input_path) - fade_seconds, 0.0):.3f}:d={fade_seconds:.3f}",
+        ]
+        if volume_gain != 1.0:
+            filters.append(f"volume={volume_gain:.3f}")
+        audio_filter = ",".join(filters)
 
         subprocess.run(
             [
@@ -246,11 +476,25 @@ class PiperSynthesisProvider(SynthesisProvider):
         if not output_path.exists() or output_path.stat().st_size == 0:
             raise RuntimeError("FFmpeg did not produce a processed per-segment WAV file")
 
+    def _fade_seconds(self, audio_path: Path) -> float:
+        duration_seconds = self._audio_duration_seconds(audio_path)
+        if duration_seconds <= 0.0:
+            return 0.005
+        return max(0.005, min(0.01, duration_seconds / 4.0))
+
+    def _audio_duration_seconds(self, audio_path: Path) -> float:
+        sample_rate, _, _ = self._read_wav_format(audio_path)
+        with wave.open(str(audio_path), "rb") as wav_file:
+            frame_count = wav_file.getnframes()
+        if sample_rate <= 0:
+            return 0.0
+        return frame_count / sample_rate
+
     def _read_wav_format(self, audio_path: Path) -> tuple[int, int, int]:
         with wave.open(str(audio_path), "rb") as wav_file:
             return wav_file.getframerate(), wav_file.getnchannels(), wav_file.getsampwidth()
 
-    def _create_silence_wav(
+    def _create_comfort_noise_wav(
         self,
         output_path: Path,
         *,
@@ -259,14 +503,41 @@ class PiperSynthesisProvider(SynthesisProvider):
         channels: int,
         sample_width: int,
     ) -> None:
-        frame_count = int(sample_rate * (duration_ms / 1000))
-        silent_frame = b"\x00" * sample_width * channels
+        duration_seconds = max(duration_ms / 1000.0, 0.005)
+        fade_seconds = max(0.005, min(0.01, duration_seconds / 4.0))
+        tail_start = max(duration_seconds - fade_seconds, 0.0)
 
-        with wave.open(str(output_path), "wb") as wav_file:
-            wav_file.setnchannels(channels)
-            wav_file.setsampwidth(sample_width)
-            wav_file.setframerate(sample_rate)
-            wav_file.writeframes(silent_frame * frame_count)
+        subprocess.run(
+            [
+                self.ffmpeg_bin,
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                f"anoisesrc=color=white:duration={duration_seconds:.3f}:sample_rate={sample_rate}",
+                "-filter:a",
+                ",".join(
+                    [
+                        "highpass=f=120",
+                        "lowpass=f=3500",
+                        f"volume={ROOM_TONE_VOLUME:.4f}",
+                        f"afade=t=in:st=0:d={fade_seconds:.3f}",
+                        f"afade=t=out:st={tail_start:.3f}:d={fade_seconds:.3f}",
+                    ]
+                ),
+                "-ac",
+                str(channels),
+                "-c:a",
+                "pcm_s16le",
+                str(output_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+
+        if not output_path.exists() or output_path.stat().st_size == 0:
+            raise RuntimeError("FFmpeg did not produce a comfort-noise WAV file")
 
     def _concat_audio_files(self, input_paths: list[Path], output_path: Path, temp_dir: Path) -> None:
         concat_file = temp_dir / "concat.txt"

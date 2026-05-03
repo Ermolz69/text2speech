@@ -13,7 +13,8 @@
     "coverage:shared": "pnpm --dir src/shared run coverage",
     "lint": "pnpm -r lint",
     "format": "pnpm -r format",
-    "prepare": "husky"
+    "prepare": "husky",
+    "benchmark:neutral-vs-expressive": "pwsh scripts/run_benchmark_neutral_vs_expressive.ps1"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",

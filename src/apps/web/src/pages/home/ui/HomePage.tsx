@@ -22,6 +22,9 @@ export function HomePage() {
     handleVoiceChange,
     handleModeChange,
     handleFormatChange,
+    handleLengthScaleChange,
+    handleNoiseScaleChange,
+    handleIntensityBoostChange,
     toggleDiagnostics,
   } = useHomePage();
 
@@ -56,6 +59,9 @@ export function HomePage() {
           onVoiceChange={handleVoiceChange}
           onModeChange={handleModeChange}
           onFormatChange={handleFormatChange}
+          onLengthScaleChange={handleLengthScaleChange}
+          onNoiseScaleChange={handleNoiseScaleChange}
+          onIntensityBoostChange={handleIntensityBoostChange}
         />
 
         <ResultPanel

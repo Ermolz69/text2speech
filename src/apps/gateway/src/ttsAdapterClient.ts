@@ -1,11 +1,12 @@
 ﻿import { z } from "zod";
-import type { SynthesizeRequestDto, SynthesizeResponseDto } from "shared";
+import type { ListVoicesResponseDto, SynthesizeRequestDto, SynthesizeResponseDto } from "shared";
 
 export interface TtsAdapterClient {
   synthesize(
     payload: SynthesizeRequestDto,
     options?: { requestId?: string }
   ): Promise<SynthesizeResponseDto>;
+  fetchVoices(options?: { requestId?: string }): Promise<ListVoicesResponseDto>;
   fetchAudio(filename: string, options?: { requestId?: string }): Promise<UpstreamAudioFile>;
 }
 
@@ -38,6 +39,8 @@ const sharedAnalyzeSegmentSchema = z.object({
   pauseAfterMs: z.number().int().nonnegative().optional(),
   rate: z.number().positive().optional(),
   pitchHint: z.number().optional(),
+  hesitationMarkers: z.array(z.string()).optional(),
+  stressedWords: z.array(z.string()).optional(),
 });
 
 const upstreamSynthesizeRequestSchema = z.object({
@@ -48,6 +51,9 @@ const upstreamSynthesizeRequestSchema = z.object({
       segments: z.array(sharedAnalyzeSegmentSchema).min(1).optional(),
       emotion: sharedEmotionSchema.optional(),
       intensity: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]).optional(),
+      intensityBoost: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]).optional(),
+      lengthScale: z.number().positive().optional(),
+      noiseScale: z.number().nonnegative().optional(),
       format: z.enum(["wav", "mp3", "ogg"]).optional(),
     })
     .optional(),
@@ -60,10 +66,22 @@ const upstreamSynthesizeResponseSchema = z.object({
       segments: z.array(sharedAnalyzeSegmentSchema).optional(),
       emotion: sharedEmotionSchema.optional(),
       intensity: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]).optional(),
+      intensityBoost: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]).optional(),
+      lengthScale: z.number().positive().optional(),
+      noiseScale: z.number().nonnegative().optional(),
       format: z.enum(["wav", "mp3", "ogg"]).optional(),
     })
     .optional(),
   metricsUrl: z.string().min(1).optional(),
+});
+
+const upstreamVoicesResponseSchema = z.object({
+  voices: z.array(
+    z.object({
+      id: z.string().min(1),
+      label: z.string().min(1),
+    })
+  ),
 });
 
 export type TtsAdapterClientErrorKind = "timeout" | "upstream";
@@ -120,6 +138,10 @@ export function mapSynthesizeRequest(payload: SynthesizeRequestDto): SynthesizeR
 
 export function mapSynthesizeResponse(payload: unknown): SynthesizeResponseDto {
   return upstreamSynthesizeResponseSchema.parse(payload);
+}
+
+export function mapVoicesResponse(payload: unknown): ListVoicesResponseDto {
+  return upstreamVoicesResponseSchema.parse(payload);
 }
 
 export function getTtsAdapterClientConfig(): TtsAdapterClientConfig {
@@ -258,6 +280,74 @@ export function createTtsAdapterClient(config: TtsAdapterClientConfig): TtsAdapt
         throw new TtsAdapterClientError("upstream", "network", "TTS adapter audio request failed", {
           cause: error instanceof Error ? error : undefined,
         });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    },
+    async fetchVoices(options?: { requestId?: string }): Promise<ListVoicesResponseDto> {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), config.timeoutMs);
+
+      try {
+        const response = await fetchFn(`${baseUrl}/voices`, {
+          method: "GET",
+          headers: {
+            ...(options?.requestId ? { "X-Request-Id": options.requestId } : {}),
+          },
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          throw new TtsAdapterClientError(
+            "upstream",
+            "response_status",
+            `TTS adapter voices responded with status ${response.status}`,
+            { statusCode: response.status }
+          );
+        }
+
+        let body: unknown;
+        try {
+          body = await response.json();
+        } catch (error) {
+          throw new TtsAdapterClientError(
+            "upstream",
+            "invalid_json",
+            "TTS adapter voices returned invalid JSON",
+            { cause: error }
+          );
+        }
+
+        try {
+          return mapVoicesResponse(body);
+        } catch (error) {
+          throw new TtsAdapterClientError(
+            "upstream",
+            "invalid_payload",
+            "TTS adapter voices returned an unexpected payload",
+            { cause: error }
+          );
+        }
+      } catch (error) {
+        if (error instanceof TtsAdapterClientError) {
+          throw error;
+        }
+
+        if (error instanceof Error && error.name === "AbortError") {
+          throw new TtsAdapterClientError(
+            "timeout",
+            "timeout",
+            "TTS adapter voices request timed out",
+            { cause: error }
+          );
+        }
+
+        throw new TtsAdapterClientError(
+          "upstream",
+          "network",
+          "TTS adapter voices request failed",
+          { cause: error instanceof Error ? error : undefined }
+        );
       } finally {
         clearTimeout(timeoutId);
       }
