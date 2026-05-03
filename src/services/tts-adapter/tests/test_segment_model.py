@@ -2,13 +2,16 @@
 
 from app.main import app
 from app.models.segment import SegmentMetadata
-from app.providers.base import SynthesisResult
+from app.providers.base import SynthesisResult, VoiceInfo
 
 client = TestClient(app, raise_server_exceptions=False)
 
 
 def test_health_reports_readiness_from_provider() -> None:
     class ReadyProvider:
+        def list_voices(self) -> list[VoiceInfo]:
+            return [VoiceInfo(id="voice-1", label="voice-1")]
+
         def get_readiness(self) -> dict[str, object]:
             return {
                 "ready": True,
@@ -18,7 +21,14 @@ def test_health_reports_readiness_from_provider() -> None:
                 "model_exists": True,
             }
 
-        def synthesize(self, segments: list[SegmentMetadata]) -> SynthesisResult:
+        def synthesize(
+            self,
+            segments: list[SegmentMetadata],
+            *,
+            voice_id: str,
+            length_scale: float | None = None,
+            noise_scale: float | None = None,
+        ) -> SynthesisResult:
             return SynthesisResult(
                 audio_url="/stub.wav",
                 received_segments=len(segments),
@@ -54,6 +64,9 @@ def test_health_reports_readiness_from_provider() -> None:
 
 def test_health_ready_returns_503_when_provider_is_not_ready() -> None:
     class NotReadyProvider:
+        def list_voices(self) -> list[VoiceInfo]:
+            return [VoiceInfo(id="voice-1", label="voice-1")]
+
         def get_readiness(self) -> dict[str, object]:
             return {
                 "ready": False,
@@ -63,7 +76,14 @@ def test_health_ready_returns_503_when_provider_is_not_ready() -> None:
                 "model_exists": False,
             }
 
-        def synthesize(self, segments: list[SegmentMetadata]) -> SynthesisResult:
+        def synthesize(
+            self,
+            segments: list[SegmentMetadata],
+            *,
+            voice_id: str,
+            length_scale: float | None = None,
+            noise_scale: float | None = None,
+        ) -> SynthesisResult:
             raise AssertionError("synthesize should not be called")
 
     app.state.synthesis_provider = NotReadyProvider()
@@ -83,7 +103,17 @@ def test_health_ready_returns_503_when_provider_is_not_ready() -> None:
 
 def test_synthesize_accepts_shared_request_structure() -> None:
     class StubProvider:
-        def synthesize(self, segments: list[SegmentMetadata]) -> SynthesisResult:
+        def list_voices(self) -> list[VoiceInfo]:
+            return [VoiceInfo(id="voice-1", label="voice-1")]
+
+        def synthesize(
+            self,
+            segments: list[SegmentMetadata],
+            *,
+            voice_id: str,
+            length_scale: float | None = None,
+            noise_scale: float | None = None,
+        ) -> SynthesisResult:
             return SynthesisResult(
                 audio_url="/stub.wav",
                 received_segments=len(segments),
@@ -137,7 +167,17 @@ def test_synthesize_delegates_to_configured_provider() -> None:
         def __init__(self) -> None:
             self.calls: list[list[SegmentMetadata]] = []
 
-        def synthesize(self, segments: list[SegmentMetadata]) -> SynthesisResult:
+        def list_voices(self) -> list[VoiceInfo]:
+            return [VoiceInfo(id="voice-1", label="voice-1")]
+
+        def synthesize(
+            self,
+            segments: list[SegmentMetadata],
+            *,
+            voice_id: str,
+            length_scale: float | None = None,
+            noise_scale: float | None = None,
+        ) -> SynthesisResult:
             self.calls.append(segments)
             return SynthesisResult(
                 audio_url="/stub.wav",
@@ -196,6 +236,39 @@ def test_synthesize_validation_errors_use_shared_envelope() -> None:
     assert body["error"]["code"] == "validation_error"
     assert body["error"]["path"] == "/synthesize"
     assert {detail["location"] for detail in body["error"]["details"]} >= {"body.text", "body.voiceId"}
+
+
+def test_voices_returns_available_voice_models() -> None:
+    class StubProvider:
+        def list_voices(self) -> list[VoiceInfo]:
+            return [
+                VoiceInfo(id="en_US-lessac-medium", label="en_US-lessac-medium"),
+                VoiceInfo(id="uk_UA-voice", label="uk_UA-voice"),
+            ]
+
+        def synthesize(
+            self,
+            segments: list[SegmentMetadata],
+            *,
+            voice_id: str,
+            length_scale: float | None = None,
+            noise_scale: float | None = None,
+        ) -> SynthesisResult:
+            return SynthesisResult(audio_url="/stub.wav", received_segments=0, total_pause_ms=0)
+
+    app.state.synthesis_provider = StubProvider()
+    try:
+        response = client.get("/voices")
+    finally:
+        del app.state.synthesis_provider
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "voices": [
+            {"id": "en_US-lessac-medium", "label": "en_US-lessac-medium"},
+            {"id": "uk_UA-voice", "label": "uk_UA-voice"},
+        ]
+    }
 
 
 

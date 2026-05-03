@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { analyzeText, getHealth, synthesizeText } from "./gateway";
+import { analyzeText, getHealth, getTtsVoices, synthesizeText } from "./gateway";
 
 describe("gateway api client", () => {
   afterEach(() => {
@@ -78,6 +78,27 @@ describe("gateway api client", () => {
 
     await expect(getHealth()).resolves.toEqual({ status: "ok", service: "gateway" });
     expect(fetchMock).toHaveBeenCalledWith("/health", { method: "GET" });
+  });
+
+  it("loads available tts voices", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          voices: [{ id: "en_US-lessac-medium", label: "en_US-lessac-medium" }],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      )
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(getTtsVoices()).resolves.toEqual({
+      voices: [{ id: "en_US-lessac-medium", label: "en_US-lessac-medium" }],
+    });
+    expect(fetchMock).toHaveBeenCalledWith("/api/tts/voices", { method: "GET" });
   });
 
   it("throws a helpful error when the gateway responds with a failure status", async () => {

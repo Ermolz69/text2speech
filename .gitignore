@@ -31,8 +31,10 @@ __pycache__/
 reports/*
 !reports/.gitkeep
 
-benchmarks/*
-!benchmarks/.gitkeep
+benchmarks/results/*
+!benchmarks/results/.gitkeep
+!benchmarks/corpus_v1.json
+!benchmarks/run_benchmark.py
 
 src/services/tts-adapter/generated-audio/*
 !src/services/tts-adapter/generated-audio/.gitkeep

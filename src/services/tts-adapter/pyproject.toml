@@ -6,7 +6,9 @@ requires-python = ">=3.11"
 dependencies = [
   "fastapi",
   "uvicorn[standard]",
-  "pydantic"
+  "pydantic",
+  "prometheus-client",
+  "sentry-sdk[fastapi]"
 ]
 
 [project.optional-dependencies]

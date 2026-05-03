@@ -131,7 +131,8 @@ def test_piper_provider_invokes_cli_per_segment_and_strips_non_spoken_markers(
             SegmentMetadata(text=f"Hello! {SMILING_FACE}", pause_ms=120, rate=1.25, pitch_hint=2.0),
             SegmentMetadata(text=":)", pause_ms=80, rate=1.0, pitch_hint=0.0),
             SegmentMetadata(text="How are you?", pause_ms=80, rate=0.8, pitch_hint=-2.0),
-        ]
+        ],
+        voice_id="test",
     )
 
     piper_calls = [call for call in calls if Path(call["command"][0]).name == "piper-bin"]
@@ -146,6 +147,7 @@ def test_piper_provider_invokes_cli_per_segment_and_strips_non_spoken_markers(
     assert "--length-scale" in piper_calls[0]["command"]
     assert piper_calls[0]["command"][piper_calls[0]["command"].index("--length-scale") + 1] == "0.800"
     assert piper_calls[1]["command"][piper_calls[1]["command"].index("--length-scale") + 1] == "1.250"
+    assert "--noise-scale" in piper_calls[0]["command"]
     assert any("asetrate=" in " ".join(call["command"]) for call in ffmpeg_calls)
     assert any("afade=t=in" in " ".join(call["command"]) for call in ffmpeg_calls)
     assert any("anoisesrc" in " ".join(call["command"]) for call in ffmpeg_calls)
@@ -277,7 +279,8 @@ def test_piper_provider_applies_word_level_emphasis_for_stressed_words(
                 rate=1.0,
                 stressed_words=["REALLY"],
             )
-        ]
+        ],
+        voice_id="test",
     )
 
     piper_calls = [call for call in calls if Path(call["command"][0]).name == "piper-bin"]
@@ -341,7 +344,8 @@ def test_piper_provider_injects_hesitation_marker_with_lower_volume_and_randomiz
                 rate=1.0,
                 hesitation_markers=["uh"],
             )
-        ]
+        ],
+        voice_id="test",
     )
 
     piper_calls = [call for call in calls if Path(call["command"][0]).name == "piper-bin"]
@@ -352,3 +356,19 @@ def test_piper_provider_injects_hesitation_marker_with_lower_volume_and_randomiz
     assert "volume=" in hesitation_filter
     volume_segment = hesitation_filter.split("volume=")[-1]
     assert float(volume_segment) < 0.85
+
+
+def test_list_voices_reads_models_from_directory(tmp_path: Path) -> None:
+    (tmp_path / "en_US-lessac-medium.onnx").write_bytes(b"model")
+    (tmp_path / "uk_UA-voice.onnx").write_bytes(b"model")
+
+    provider = PiperSynthesisProvider(
+        piper_bin="piper-bin",
+        ffmpeg_bin="ffmpeg-bin",
+        model_path=tmp_path / "en_US-lessac-medium.onnx",
+        output_dir=tmp_path,
+    )
+
+    voices = provider.list_voices()
+
+    assert [voice.id for voice in voices] == ["en_US-lessac-medium", "uk_UA-voice"]

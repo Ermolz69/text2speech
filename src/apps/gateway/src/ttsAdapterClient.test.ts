@@ -4,6 +4,7 @@ import {
   createTtsAdapterClient,
   mapSynthesizeRequest,
   mapSynthesizeResponse,
+  mapVoicesResponse,
 } from "./ttsAdapterClient";
 
 describe("ttsAdapterClient", () => {
@@ -23,6 +24,9 @@ describe("ttsAdapterClient", () => {
           audioUrl: "/audio/placeholder.wav",
           metadata: {
             format: "wav",
+            intensityBoost: 2,
+            lengthScale: 1.15,
+            noiseScale: 0.8,
             segments: [
               {
                 text: "Hello! :)",
@@ -53,6 +57,9 @@ describe("ttsAdapterClient", () => {
       voiceId: "voice-1",
       metadata: {
         format: "wav" as const,
+        intensityBoost: 2 as const,
+        lengthScale: 1.15,
+        noiseScale: 0.8,
         segments: [
           {
             text: "Hello! :)",
@@ -238,6 +245,49 @@ describe("ttsAdapterClient", () => {
     });
   });
 
+  it("fetches available voices from the adapter", async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          voices: [
+            { id: "en_US-lessac-medium", label: "en_US-lessac-medium" },
+            { id: "uk_UA-voice", label: "uk_UA-voice" },
+          ],
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      )
+    );
+
+    const client = createTtsAdapterClient({
+      baseUrl: "http://tts-adapter:8002",
+      timeoutMs: 3000,
+      fetchFn,
+    });
+
+    await expect(client.fetchVoices({ requestId: "req-voices" })).resolves.toEqual({
+      voices: [
+        { id: "en_US-lessac-medium", label: "en_US-lessac-medium" },
+        { id: "uk_UA-voice", label: "uk_UA-voice" },
+      ],
+    });
+
+    expect(fetchFn).toHaveBeenCalledWith(
+      "http://tts-adapter:8002/voices",
+      expect.objectContaining({
+        method: "GET",
+        headers: {
+          "X-Request-Id": "req-voices",
+        },
+        signal: expect.any(AbortSignal),
+      })
+    );
+  });
+
   it("surfaces network failures distinctly from upstream status errors", async () => {
     const fetchFn = vi.fn().mockRejectedValue(new TypeError("fetch failed"));
 
@@ -271,6 +321,9 @@ describe("ttsAdapterClient mappers", () => {
         text: "Hello",
         voiceId: "voice-1",
         metadata: {
+          intensityBoost: 1,
+          lengthScale: 1.05,
+          noiseScale: 0.7,
           segments: [
             {
               text: "Hello",
@@ -291,6 +344,9 @@ describe("ttsAdapterClient mappers", () => {
       text: "Hello",
       voiceId: "voice-1",
       metadata: {
+        intensityBoost: 1,
+        lengthScale: 1.05,
+        noiseScale: 0.7,
         segments: [
           {
             text: "Hello",
@@ -315,6 +371,9 @@ describe("ttsAdapterClient mappers", () => {
         audioUrl: "/audio/voice.wav",
         metadata: {
           segments: [{ text: "Hello", emotion: "neutral", intensity: 0 }],
+          intensityBoost: 2,
+          lengthScale: 1.1,
+          noiseScale: 0.75,
           format: "wav",
         },
       })
@@ -322,8 +381,21 @@ describe("ttsAdapterClient mappers", () => {
       audioUrl: "/audio/voice.wav",
       metadata: {
         segments: [{ text: "Hello", emotion: "neutral", intensity: 0 }],
+        intensityBoost: 2,
+        lengthScale: 1.1,
+        noiseScale: 0.75,
         format: "wav",
       },
+    });
+  });
+
+  it("parses a voices response", () => {
+    expect(
+      mapVoicesResponse({
+        voices: [{ id: "en_US-lessac-medium", label: "en_US-lessac-medium" }],
+      })
+    ).toEqual({
+      voices: [{ id: "en_US-lessac-medium", label: "en_US-lessac-medium" }],
     });
   });
 });

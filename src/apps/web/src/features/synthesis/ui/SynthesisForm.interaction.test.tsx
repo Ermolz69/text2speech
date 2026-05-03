@@ -13,6 +13,9 @@ describe("SynthesisForm interactions", () => {
     const onVoiceChange = vi.fn();
     const onModeChange = vi.fn();
     const onFormatChange = vi.fn();
+    const onLengthScaleChange = vi.fn();
+    const onNoiseScaleChange = vi.fn();
+    const onIntensityBoostChange = vi.fn();
 
     render(
       <SynthesisForm
@@ -21,6 +24,9 @@ describe("SynthesisForm interactions", () => {
           voiceId: "voice-1",
           mode: "expressive",
           outputFormat: "mp3",
+          lengthScale: 1,
+          noiseScale: 0.667,
+          intensityBoost: 0,
         }}
         requestState="idle"
         loadingStage={null}
@@ -34,21 +40,30 @@ describe("SynthesisForm interactions", () => {
         onVoiceChange={onVoiceChange}
         onModeChange={onModeChange}
         onFormatChange={onFormatChange}
+        onLengthScaleChange={onLengthScaleChange}
+        onNoiseScaleChange={onNoiseScaleChange}
+        onIntensityBoostChange={onIntensityBoostChange}
       />
     );
 
-    fireEvent.change(screen.getByPlaceholderText("Paste text to synthesize"), {
+    fireEvent.change(screen.getByLabelText("Text"), {
       target: { value: "Updated text" },
     });
-    fireEvent.change(screen.getByDisplayValue("Voice 1"), { target: { value: "voice-2" } });
-    fireEvent.change(screen.getByDisplayValue("expressive"), { target: { value: "neutral" } });
-    fireEvent.change(screen.getByDisplayValue("mp3"), { target: { value: "wav" } });
+    fireEvent.change(screen.getByLabelText("Voice"), { target: { value: "voice-2" } });
+    fireEvent.change(screen.getByLabelText("Format"), { target: { value: "wav" } });
+    fireEvent.change(screen.getByLabelText("length_scale"), { target: { value: "1.2" } });
+    fireEvent.change(screen.getByLabelText("noise_scale"), { target: { value: "0.9" } });
+    fireEvent.click(screen.getByRole("button", { name: "Strong" }));
+    fireEvent.change(screen.getByLabelText("Mode"), { target: { value: "neutral" } });
     fireEvent.submit(screen.getByRole("button", { name: "Run synthesis" }).closest("form")!);
 
     expect(onTextChange).toHaveBeenCalledWith("Updated text");
     expect(onVoiceChange).toHaveBeenCalledWith("voice-2");
     expect(onModeChange).toHaveBeenCalledWith("neutral");
     expect(onFormatChange).toHaveBeenCalledWith("wav");
+    expect(onLengthScaleChange).toHaveBeenCalledWith(1.2);
+    expect(onNoiseScaleChange).toHaveBeenCalledWith(0.9);
+    expect(onIntensityBoostChange).toHaveBeenCalledWith(3);
     expect(onSubmit).toHaveBeenCalled();
   });
 });

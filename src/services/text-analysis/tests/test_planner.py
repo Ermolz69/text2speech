@@ -4,10 +4,32 @@ from app.domain.planner import plan_segment
 from app.domain.signal_extractor import ExtractedSignals, SentenceIntent
 
 
+def _default_signals(**overrides) -> ExtractedSignals:
+    base = ExtractedSignals(
+        cues=(),
+        sentence_intent=SentenceIntent.DECLARATIVE,
+        has_exclamation=False,
+        has_question=False,
+        has_ellipsis=False,
+        has_positive_emoji=False,
+        has_negative_emoji=False,
+        has_surprise_emoji=False,
+        has_celebration_emoji=False,
+        has_mixed_punctuation=False,
+        has_repeated_exclamation=False,
+        has_repeated_question=False,
+        is_all_caps=False,
+        exclamation_count=0,
+        question_count=0,
+        positive_emoji_count=0,
+    )
+    return ExtractedSignals(**{**base.__dict__, **overrides})
+
+
 def test_plan_segment_combines_emotion_and_prosody_rules() -> None:
     segment = plan_segment(
         "Hello! :) ...?",
-        ExtractedSignals(
+        _default_signals(
             cues=(
                 "punctuation:exclamation",
                 "punctuation:question",
@@ -20,9 +42,7 @@ def test_plan_segment_combines_emotion_and_prosody_rules() -> None:
             has_question=True,
             has_ellipsis=True,
             has_positive_emoji=True,
-            has_mixed_punctuation=False,
-            has_repeated_exclamation=False,
-            has_repeated_question=False,
+            positive_emoji_count=1,
         ),
     )
 
@@ -51,30 +71,13 @@ def test_plan_segment_combines_emotion_and_prosody_rules() -> None:
 def test_plan_segment_makes_exclamation_more_audible_than_neutral() -> None:
     neutral = plan_segment(
         "Hello.",
-        ExtractedSignals(
-            cues=(),
-            sentence_intent=SentenceIntent.DECLARATIVE,
-            has_exclamation=False,
-            has_question=False,
-            has_ellipsis=False,
-            has_positive_emoji=False,
-            has_mixed_punctuation=False,
-            has_repeated_exclamation=False,
-            has_repeated_question=False,
-        ),
+        _default_signals(),
     )
     emphatic = plan_segment(
         "Hello!",
-        ExtractedSignals(
+        _default_signals(
             cues=("punctuation:exclamation", "intent:declarative"),
-            sentence_intent=SentenceIntent.DECLARATIVE,
             has_exclamation=True,
-            has_question=False,
-            has_ellipsis=False,
-            has_positive_emoji=False,
-            has_mixed_punctuation=False,
-            has_repeated_exclamation=False,
-            has_repeated_question=False,
         ),
     )
 
@@ -87,16 +90,9 @@ def test_plan_segment_makes_exclamation_more_audible_than_neutral() -> None:
 def test_plan_segment_keeps_ellipsis_more_subtle_than_before() -> None:
     ellipsis = plan_segment(
         "Wait...",
-        ExtractedSignals(
+        _default_signals(
             cues=("punctuation:ellipsis", "intent:declarative"),
-            sentence_intent=SentenceIntent.DECLARATIVE,
-            has_exclamation=False,
-            has_question=False,
             has_ellipsis=True,
-            has_positive_emoji=False,
-            has_mixed_punctuation=False,
-            has_repeated_exclamation=False,
-            has_repeated_question=False,
         ),
     )
 
@@ -110,34 +106,22 @@ def test_plan_segment_keeps_ellipsis_more_subtle_than_before() -> None:
 def test_plan_segment_amplifies_repeated_exclamation_more_than_single_exclamation() -> None:
     single = plan_segment(
         "Wow!",
-        ExtractedSignals(
+        _default_signals(
             cues=("punctuation:exclamation", "intent:declarative"),
-            sentence_intent=SentenceIntent.DECLARATIVE,
             has_exclamation=True,
-            has_question=False,
-            has_ellipsis=False,
-            has_positive_emoji=False,
-            has_mixed_punctuation=False,
-            has_repeated_exclamation=False,
-            has_repeated_question=False,
         ),
     )
     repeated = plan_segment(
         "Wow!!!",
-        ExtractedSignals(
+        _default_signals(
             cues=(
                 "punctuation:exclamation",
                 "punctuation:repeated-exclamation",
                 "intent:declarative",
             ),
-            sentence_intent=SentenceIntent.DECLARATIVE,
             has_exclamation=True,
-            has_question=False,
-            has_ellipsis=False,
-            has_positive_emoji=False,
-            has_mixed_punctuation=False,
             has_repeated_exclamation=True,
-            has_repeated_question=False,
+            exclamation_count=3,
         ),
     )
 
@@ -148,21 +132,14 @@ def test_plan_segment_amplifies_repeated_exclamation_more_than_single_exclamatio
 def test_plan_segment_makes_mixed_punctuation_more_expressive_than_plain_exclamation() -> None:
     plain = plan_segment(
         "Really!",
-        ExtractedSignals(
+        _default_signals(
             cues=("punctuation:exclamation", "intent:declarative"),
-            sentence_intent=SentenceIntent.DECLARATIVE,
             has_exclamation=True,
-            has_question=False,
-            has_ellipsis=False,
-            has_positive_emoji=False,
-            has_mixed_punctuation=False,
-            has_repeated_exclamation=False,
-            has_repeated_question=False,
         ),
     )
     mixed = plan_segment(
         "Really?!",
-        ExtractedSignals(
+        _default_signals(
             cues=(
                 "punctuation:exclamation",
                 "punctuation:question",
@@ -172,11 +149,7 @@ def test_plan_segment_makes_mixed_punctuation_more_expressive_than_plain_exclama
             sentence_intent=SentenceIntent.INTERROGATIVE,
             has_exclamation=True,
             has_question=True,
-            has_ellipsis=False,
-            has_positive_emoji=False,
             has_mixed_punctuation=True,
-            has_repeated_exclamation=False,
-            has_repeated_question=False,
         ),
     )
 
@@ -188,16 +161,9 @@ def test_plan_segment_makes_mixed_punctuation_more_expressive_than_plain_exclama
 def test_plan_segment_uses_imperative_contour_for_command_like_text() -> None:
     imperative = plan_segment(
         "Please close the door.",
-        ExtractedSignals(
+        _default_signals(
             cues=("intent:imperative",),
             sentence_intent=SentenceIntent.IMPERATIVE,
-            has_exclamation=False,
-            has_question=False,
-            has_ellipsis=False,
-            has_positive_emoji=False,
-            has_mixed_punctuation=False,
-            has_repeated_exclamation=False,
-            has_repeated_question=False,
         ),
     )
 
@@ -211,16 +177,8 @@ def test_plan_segment_uses_imperative_contour_for_command_like_text() -> None:
 def test_plan_segment_extracts_stressed_words_from_uppercase_and_markers() -> None:
     segment = plan_segment(
         "I REALLY *need* this.",
-        ExtractedSignals(
+        _default_signals(
             cues=("intent:declarative",),
-            sentence_intent=SentenceIntent.DECLARATIVE,
-            has_exclamation=False,
-            has_question=False,
-            has_ellipsis=False,
-            has_positive_emoji=False,
-            has_mixed_punctuation=False,
-            has_repeated_exclamation=False,
-            has_repeated_question=False,
         ),
     )
 
@@ -232,16 +190,9 @@ def test_plan_segment_extracts_stressed_words_from_uppercase_and_markers() -> No
 def test_plan_segment_adds_hesitation_marker_for_ellipsis() -> None:
     segment = plan_segment(
         "Wait... let me see",
-        ExtractedSignals(
+        _default_signals(
             cues=("punctuation:ellipsis", "intent:declarative"),
-            sentence_intent=SentenceIntent.DECLARATIVE,
-            has_exclamation=False,
-            has_question=False,
             has_ellipsis=True,
-            has_positive_emoji=False,
-            has_mixed_punctuation=False,
-            has_repeated_exclamation=False,
-            has_repeated_question=False,
         ),
     )
 
@@ -252,16 +203,8 @@ def test_plan_segment_adds_hesitation_marker_for_ellipsis() -> None:
 def test_plan_segment_adds_complexity_based_hesitation_marker() -> None:
     segment = plan_segment(
         "Well, I think, we should maybe reconsider this choice carefully.",
-        ExtractedSignals(
+        _default_signals(
             cues=("intent:declarative",),
-            sentence_intent=SentenceIntent.DECLARATIVE,
-            has_exclamation=False,
-            has_question=False,
-            has_ellipsis=False,
-            has_positive_emoji=False,
-            has_mixed_punctuation=False,
-            has_repeated_exclamation=False,
-            has_repeated_question=False,
         ),
     )
 

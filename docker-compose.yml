@@ -30,6 +30,9 @@ services:
       - TEXT_ANALYSIS_URL=http://text-analysis:8001
       - TTS_ADAPTER_URL=http://tts-adapter:8002
       - TTS_ADAPTER_TIMEOUT_MS=${TTS_ADAPTER_TIMEOUT_MS:-15000}
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - SENTRY_TRACES_SAMPLE_RATE=${SENTRY_TRACES_SAMPLE_RATE:-0.1}
+      - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
     depends_on:
       text-analysis:
         condition: service_healthy
@@ -52,6 +55,9 @@ services:
       dockerfile: ./docker/Dockerfile.text-analysis
     environment:
       - PORT_TEXT_ANALYSIS=${PORT_TEXT_ANALYSIS:-8001}
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - SENTRY_TRACES_SAMPLE_RATE=${SENTRY_TRACES_SAMPLE_RATE:-0.1}
+      - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
     ports:
       - "${PORT_TEXT_ANALYSIS:-8001}:8001"
     healthcheck:
@@ -75,6 +81,9 @@ services:
       - PIPER_MODEL_PATH=${PIPER_MODEL_PATH:-/models/piper/model.onnx}
       - FFMPEG_BIN=${FFMPEG_BIN:-/usr/bin/ffmpeg}
       - TTS_OUTPUT_DIR=/app/generated-audio
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - SENTRY_TRACES_SAMPLE_RATE=${SENTRY_TRACES_SAMPLE_RATE:-0.1}
+      - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
     volumes:
       - ${PIPER_MODEL_DIR:-./models/piper}:/models/piper:ro
       - ${TTS_OUTPUT_DIR:-./src/services/tts-adapter/generated-audio}:/app/generated-audio
@@ -91,6 +100,51 @@ services:
       retries: 6
       start_period: 15s
 
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "${PORT_PROMETHEUS:-9090}:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9090/-/healthy >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "${PORT_GRAFANA:-3000}:3000"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
 networks:
   default:
     name: emotion-tts-network
+
+volumes:
+  prometheus-data:
+  grafana-data:
