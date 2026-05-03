@@ -13,6 +13,8 @@ def test_extract_signals_collects_known_cues() -> None:
     assert signals.has_mixed_punctuation is False
     assert signals.has_repeated_exclamation is False
     assert signals.has_repeated_question is False
+    assert signals.exclamation_count == 1
+    assert signals.positive_emoji_count == 1
     assert signals.cues == (
         "punctuation:exclamation",
         "punctuation:question",
@@ -25,6 +27,8 @@ def test_extract_signals_recognizes_unicode_positive_emoji() -> None:
     signals = extract_signals(f"I am happy {SMILING_FACE}")
 
     assert signals.has_positive_emoji is True
+    assert signals.positive_emoji_count == 1
+    assert signals.exclamation_count == 0
     assert signals.cues == ("emoji:positive",)
 
 
@@ -36,6 +40,8 @@ def test_extract_signals_combines_unicode_emoji_with_punctuation() -> None:
     assert signals.has_positive_emoji is True
     assert signals.has_ellipsis is True
     assert signals.has_mixed_punctuation is True
+    assert signals.exclamation_count == 1
+    assert signals.positive_emoji_count == 1
     assert signals.cues == (
         "punctuation:exclamation",
         "punctuation:question",
@@ -78,6 +84,7 @@ def test_extract_signals_recognizes_repeated_exclamation() -> None:
 
     assert signals.has_exclamation is True
     assert signals.has_repeated_exclamation is True
+    assert signals.exclamation_count == 3
     assert signals.cues == (
         "punctuation:exclamation",
         "punctuation:repeated-exclamation",

@@ -1,9 +1,11 @@
+import * as Sentry from "@sentry/node";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import type {
   AnalyzeRequestDto,
   AnalyzeResponseDto,
   ApiErrorDetail,
   ApiErrorResponse,
+  ListVoicesResponseDto,
   EmotionLabel,
   SynthesizeRequestDto,
   SynthesizeResponseDto,
@@ -21,7 +23,24 @@ import {
   TtsAdapterClientError,
   type TtsAdapterClient,
 } from "./ttsAdapterClient.js";
-import { register, httpRequestsTotal, httpRequestDurationSeconds, ttsSynthesisRequestsTotal, ttsSynthesisDurationSeconds, textAnalysisRequestsTotal, textAnalysisDurationSeconds } from "./metrics.js";
+import {
+  register,
+  httpRequestsTotal,
+  httpRequestDurationSeconds,
+  ttsSynthesisRequestsTotal,
+  ttsSynthesisDurationSeconds,
+  textAnalysisRequestsTotal,
+  textAnalysisDurationSeconds,
+} from "./metrics.js";
+
+const sentryDsn = process.env.SENTRY_DSN;
+if (sentryDsn) {
+  Sentry.init({
+    dsn: sentryDsn,
+    tracesSampleRate: parseFloat(process.env.SENTRY_TRACES_SAMPLE_RATE ?? "0.1"),
+    environment: process.env.SENTRY_ENVIRONMENT ?? "production",
+  });
+}
 
 const port = Number(process.env.PORT_GATEWAY ?? 4000);
 const nonBlankStringPattern = "\\S";
@@ -81,6 +100,9 @@ const sharedMetadataSchema = {
   properties: {
     emotion: { type: "string", enum: emotionLabels },
     intensity: { type: "integer", enum: [0, 1, 2, 3] },
+    intensityBoost: { type: "integer", enum: [0, 1, 2, 3] },
+    lengthScale: { type: "number", minimum: 0.1 },
+    noiseScale: { type: "number", minimum: 0 },
     format: { type: "string", enum: ["wav", "mp3", "ogg"] },
   },
 } as const;
@@ -261,6 +283,26 @@ function buildSynthesizePipelineRequest(
   requestBody: SynthesizeRequestDto,
   analyzeResponse: AnalyzeResponseDto
 ): SynthesizeRequestDto {
+  const intensityBoost = requestBody.metadata?.intensityBoost ?? 0;
+  const emotionOverride = requestBody.metadata?.emotion;
+  const intensityOverride = requestBody.metadata?.intensity;
+
+  const mergedSegments = analyzeResponse.segments.map((segment) => {
+    let nextIntensity = segment.intensity;
+
+    if (typeof intensityOverride === "number") {
+      nextIntensity = intensityOverride;
+    } else if (intensityBoost > 0) {
+      nextIntensity = Math.min(3, segment.intensity + intensityBoost) as 0 | 1 | 2 | 3;
+    }
+
+    return {
+      ...segment,
+      ...(emotionOverride ? { emotion: emotionOverride } : {}),
+      intensity: nextIntensity,
+    };
+  });
+
   return {
     text: requestBody.text,
     voiceId: requestBody.voiceId,
@@ -270,7 +312,16 @@ function buildSynthesizePipelineRequest(
       ...(typeof requestBody.metadata?.intensity === "number"
         ? { intensity: requestBody.metadata.intensity }
         : {}),
-      segments: analyzeResponse.segments,
+      ...(typeof requestBody.metadata?.intensityBoost === "number"
+        ? { intensityBoost: requestBody.metadata.intensityBoost }
+        : {}),
+      ...(typeof requestBody.metadata?.lengthScale === "number"
+        ? { lengthScale: requestBody.metadata.lengthScale }
+        : {}),
+      ...(typeof requestBody.metadata?.noiseScale === "number"
+        ? { noiseScale: requestBody.metadata.noiseScale }
+        : {}),
+      segments: mergedSegments,
     },
   };
 }
@@ -314,10 +365,10 @@ export function createApp(dependencies: AppDependencies = {}): FastifyInstance {
     const path = getRequestPath(request.url);
     const method = request.method;
     const status = reply.statusCode;
-    
+
     httpRequestsTotal.inc({ method, path, status });
     httpRequestDurationSeconds.observe({ method, path }, durationSec);
-    
+
     logStructuredEvent(request, {
       event: "request_finished",
       status: reply.statusCode,
@@ -346,9 +397,16 @@ export function createApp(dependencies: AppDependencies = {}): FastifyInstance {
       return;
     }
 
+    const requestId = getRequestId(request);
+
+    if (sentryDsn) {
+      Sentry.setTag("request_id", requestId);
+      Sentry.captureException(error);
+    }
+
     request.log.error({
       service: "gateway",
-      request_id: getRequestId(request),
+      request_id: requestId,
       method: request.method,
       path: getRequestPath(request.url),
       event: "runtime_error",
@@ -542,6 +600,41 @@ export function createApp(dependencies: AppDependencies = {}): FastifyInstance {
       } catch (error) {
         const synthesisDurationSec = (Date.now() - synthesisStartTime) / 1000;
         ttsSynthesisDurationSeconds.observe(synthesisDurationSec);
+        if (error instanceof TtsAdapterClientError) {
+          logTtsAdapterClientError(error, request.log);
+          logStructuredEvent(request, {
+            event: "upstream_request_failed",
+            upstream: "tts-adapter",
+            status: error.kind === "timeout" ? 504 : 502,
+            error_code: error.kind === "timeout" ? "upstream_timeout" : "upstream_error",
+          });
+          const mapped = mapUpstreamClientError(
+            error,
+            getRequestPath(request.url),
+            "TTS adapter service"
+          );
+          return reply.status(mapped.status).send(mapped.response);
+        }
+
+        throw error;
+      }
+    }
+  );
+
+  app.get<{ Reply: ListVoicesResponseDto | ApiErrorResponse }>(
+    "/api/tts/voices",
+    async (request, reply) => {
+      const requestId = getRequestId(request);
+      try {
+        logStructuredEvent(request, { event: "upstream_request_started", upstream: "tts-adapter" });
+        const response = await ttsAdapterClient.fetchVoices({ requestId });
+        logStructuredEvent(request, {
+          event: "voices_completed",
+          status: 200,
+          upstream: "tts-adapter",
+        });
+        return response;
+      } catch (error) {
         if (error instanceof TtsAdapterClientError) {
           logTtsAdapterClientError(error, request.log);
           logStructuredEvent(request, {

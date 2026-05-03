@@ -40,6 +40,9 @@ class SynthesisMetadataDto(BaseModel):
     segments: list[AnalyzeSegmentDto] | None = None
     emotion: SharedEmotionLabel | None = None
     intensity: int | None = Field(default=None, ge=0, le=3)
+    intensityBoost: int | None = Field(default=None, ge=0, le=3)
+    lengthScale: float | None = Field(default=None, gt=0.0)
+    noiseScale: float | None = Field(default=None, ge=0.0)
     format: Literal["wav", "mp3", "ogg"] | None = None
 
 
@@ -63,6 +66,19 @@ class SynthesizeResponseDto(BaseModel):
     audioUrl: str = Field(..., min_length=1)
     metadata: SynthesisMetadataDto | None = None
     metricsUrl: str | None = None
+
+
+class VoiceInfoDto(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(..., min_length=1)
+    label: str = Field(..., min_length=1)
+
+
+class ListVoicesResponseDto(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    voices: list[VoiceInfoDto]
 
 
 def _map_emotion(emotion: SharedEmotionLabel) -> InternalEmotion:
