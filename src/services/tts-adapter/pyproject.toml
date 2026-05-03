@@ -7,6 +7,7 @@ dependencies = [
   "fastapi",
   "uvicorn[standard]",
   "pydantic",
+  "prometheus-client",
   "sentry-sdk[fastapi]"
 ]
 

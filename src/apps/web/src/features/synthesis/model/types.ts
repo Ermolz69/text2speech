@@ -10,6 +10,9 @@ export interface FormState {
   voiceId: string;
   mode: SynthesisMode;
   outputFormat: OutputFormat;
+  lengthScale: number;
+  noiseScale: number;
+  intensityBoost: EmotionIntensity;
 }
 
 export interface SummaryState {

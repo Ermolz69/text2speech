@@ -167,6 +167,42 @@ powershell -ExecutionPolicy Bypass -File scripts/coverage_check.ps1
 
 CI now publishes coverage artifacts and appends a per-service coverage summary directly into the GitHub Actions job summary.
 
+## Benchmarking
+
+### Neutral vs Expressive Synthesis Comparison
+
+Run a comparative benchmark that synthesizes each corpus prompt in both neutral and expressive modes:
+
+```bash
+pnpm benchmark:neutral-vs-expressive
+```
+
+Or run the script directly:
+
+```bash
+pwsh scripts/run_benchmark_neutral_vs_expressive.ps1
+```
+
+**Parameters:**
+
+- `-WebUrl`: Web app URL (default: `http://localhost:5173`)
+- `-CorpusPath`: Path to corpus JSON (default: `docs/mvp-baseline/corpus.json`)
+- `-BenchmarkDir`: Output directory for benchmark artifacts (default: `benchmarks`)
+- `-ReportDir`: Output directory for reports (default: `reports`)
+
+**Output:**
+
+Each run creates timestamped directories:
+
+- `benchmarks/run-<timestamp>/` — audio files and JSON responses per prompt
+- `reports/benchmark-<timestamp>/` — markdown report and JSON summary
+
+**Report contents:**
+
+- Per-prompt comparison: duration (ms), file size (bytes), segment count
+- Emotion distribution between neutral and expressive variants
+- Aggregated averages across all prompts
+
 ## Documentation index
 
 Supporting documentation lives in `docs/`:

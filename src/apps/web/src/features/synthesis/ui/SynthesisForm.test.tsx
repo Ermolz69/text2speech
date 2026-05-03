@@ -10,6 +10,9 @@ describe("SynthesisForm", () => {
       voiceId: "voice-1",
       mode: "expressive" as const,
       outputFormat: "wav" as const,
+      lengthScale: 1,
+      noiseScale: 0.667,
+      intensityBoost: 0 as const,
     },
     requestState: "idle" as const,
     loadingStage: null,
@@ -23,6 +26,9 @@ describe("SynthesisForm", () => {
     onVoiceChange: vi.fn(),
     onModeChange: vi.fn(),
     onFormatChange: vi.fn(),
+    onLengthScaleChange: vi.fn(),
+    onNoiseScaleChange: vi.fn(),
+    onIntensityBoostChange: vi.fn(),
   };
 
   it("renders form controls with the provided values", () => {
@@ -36,7 +42,12 @@ describe("SynthesisForm", () => {
     expect(html).toContain("expressive");
     expect(html).toContain("wav");
     expect(html).toContain("mp3");
+    expect(html).toContain("length_scale");
+    expect(html).toContain("noise_scale");
+    expect(html).toContain("Preset emotion boost");
     expect(html).toContain("Run synthesis");
+    expect(html).toContain("Synthesis status: Idle");
+    expect(html).toContain("required");
     expect(html).not.toContain("Generating...");
   });
 
@@ -50,6 +61,7 @@ describe("SynthesisForm", () => {
     );
 
     expect(html).toContain("Generating\u2026");
+    expect(html).toContain("Synthesis status: Generating\u2026");
     expect(html).toContain("disabled");
     expect(html).toContain("Gateway request failed with status 502");
   });
