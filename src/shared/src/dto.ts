@@ -24,6 +24,8 @@ export interface AnalyzeSegmentDto {
   pauseAfterMs?: number;
   rate?: number;
   pitchHint?: number;
+  hesitationMarkers?: string[];
+  stressedWords?: string[];
 }
 
 export interface AnalyzeResponseDto {

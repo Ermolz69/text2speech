@@ -26,6 +26,8 @@ describe("textAnalysisClient", () => {
               pauseAfterMs: 250,
               rate: 1.1,
               pitchHint: 2,
+              hesitationMarkers: ["uh"],
+              stressedWords: ["REALLY"],
             },
           ],
         }),
@@ -55,6 +57,8 @@ describe("textAnalysisClient", () => {
           pauseAfterMs: 250,
           rate: 1.1,
           pitchHint: 2,
+          hesitationMarkers: ["uh"],
+          stressedWords: ["REALLY"],
         },
       ],
     });
@@ -149,6 +153,8 @@ describe("mapAnalyzeResponse", () => {
             pauseAfterMs: 150,
             rate: 1,
             pitchHint: 0,
+            hesitationMarkers: ["um"],
+            stressedWords: ["really"],
           },
         ],
       })
@@ -161,6 +167,8 @@ describe("mapAnalyzeResponse", () => {
           pauseAfterMs: 150,
           rate: 1,
           pitchHint: 0,
+          hesitationMarkers: ["um"],
+          stressedWords: ["really"],
         },
       ],
     });

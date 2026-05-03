@@ -47,6 +47,10 @@ class AnalyzeSegmentDto(BaseModel):
     pauseAfterMs: int | None = Field(default=None, ge=0)
     rate: float | None = Field(default=None, gt=0.0)
     pitchHint: float | None = None
+    sentenceIntent: str | None = None
+    pitchContour: list[dict[str, float]] | None = None
+    hesitationMarkers: list[str] | None = None
+    stressedWords: list[str] | None = None
 
 
 class AnalyzeResponseDto(BaseModel):
@@ -99,6 +103,10 @@ def to_analyze_segment_dto(segment: InternalSegmentMetadata) -> AnalyzeSegmentDt
         pauseAfterMs=segment.pause_ms,
         rate=segment.rate,
         pitchHint=segment.pitch_hint,
+        sentenceIntent=segment.sentence_intent.value,
+        pitchContour=[point.model_dump() for point in segment.pitch_contour],
+        hesitationMarkers=segment.hesitation_markers or None,
+        stressedWords=segment.stressed_words or None,
     )
 
 
